@@ -50,3 +50,28 @@ exports.updatePassword = async (req, res) => {
         res.status(500).json({ status: false, message: "Internal server error" });
     }
 };
+exports.getProfile = async (req, res) => {
+    try {
+        const adminId = req.user.id;
+        const admin = await Admin.findById(adminId).select('-password');
+        if (!admin) return res.status(404).json({ status: false, message: 'Admin not found' });
+        res.status(200).json({ status: true, data: admin });
+    } catch (error) {
+        console.error('Get profile error:', error);
+        res.status(500).json({ status: false, message: 'Internal server error' });
+    }
+};
+
+exports.updateProfile = async (req, res) => {
+    try {
+        const adminId = req.user.id;
+        const { username, email } = req.body;
+        const updatedAdmin = await Admin.findByIdAndUpdate(adminId, { username, email }, { new: true }).select('-password');
+        if (!updatedAdmin) return res.status(404).json({ status: false, message: 'Admin not found' });
+        res.status(200).json({ status: true, message: 'Profile updated successfully', data: updatedAdmin });
+    } catch (error) {
+        console.error('Update profile error:', error);
+        res.status(500).json({ status: false, message: 'Internal server error' });
+    }
+};
+
