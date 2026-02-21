@@ -18,7 +18,17 @@ exports.login = async (req, res) => {
             { expiresIn: "1d" }
         );
 
-        res.status(200).json({ status: true, message: "Login successful", token });
+        res.status(200).json({
+            status: true,
+            message: "Login successful",
+            token,
+            data: {
+                username: admin.username,
+                email: admin.email,
+                role: admin.role
+            }
+        });
+        
     } catch (error) {
         console.error("Login error:", error);
         res.status(500).json({ status: false, message: "Internal server error" });
