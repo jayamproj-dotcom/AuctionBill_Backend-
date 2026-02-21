@@ -12,4 +12,8 @@ app.use(express.json());
 //Admin Routes
 app.use("/api/admin", require("./routes/adminRoute"));
 
+
+//Subscription Routes
+app.use("/api/subscription", require("./routes/subscriptions.Route"));
+
 module.exports = app;
