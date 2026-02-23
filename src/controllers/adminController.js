@@ -25,53 +25,78 @@ exports.login = async (req, res) => {
             data: {
                 username: admin.username,
                 email: admin.email,
-                role: admin.role
+                role: admin.role,
+                id: admin._id
             }
         });
-        
+
     } catch (error) {
         console.error("Login error:", error);
         res.status(500).json({ status: false, message: "Internal server error" });
     }
 };
 
+exports.updateProfie = async (req, res) => {
+    try {
+        const { username, email } = req.body;
+        console.log(req.user);
+        const admin = await Admin.findOne({ _id: req.user.id });
+        if (!admin) return res.status(400).json({ status: false, message: "User not found" });
+        admin.username = username;
+        admin.email = email;
+        await admin.save();
+        res.status(200).json({ status: true, message: "Profile updated successfully", admin });
+    } catch (error) {
+        console.error("Update profile error:", error);
+        res.status(500).json({ status: false, message: "Internal server error" });
+    }
+}
+
 exports.updatePassword = async (req, res) => {
     try {
         const hashed = await bcrypt.hash(req.body.password, 10);
 
         await Admin.updateOne(
-            { username: "admin" },
+            { _id: req.user.id },
             { password: hashed }
         );
 
-        res.json({ message: "Password updated successfully" });
+        res.status(200).json({ status: true, message: "Password updated successfully" });
     } catch (error) {
         console.error("Update password error:", error);
         res.status(500).json({ status: false, message: "Internal server error" });
     }
 };
-exports.getProfile = async (req, res) => {
+
+exports.getAdmin = async (req, res) => {
     try {
-        const adminId = req.user.id;
-        const admin = await Admin.findById(adminId).select('-password');
-        if (!admin) return res.status(404).json({ status: false, message: 'Admin not found' });
-        res.status(200).json({ status: true, data: admin });
+        const admin = await Admin.findById(req.user.id).select("-password");
+        if (!admin) return res.status(404).json({ status: false, message: "User not found" });
+
+        res.status(200).json({ status: true, admin });
     } catch (error) {
-        console.error('Get profile error:', error);
-        res.status(500).json({ status: false, message: 'Internal server error' });
+        console.error("Get admin error:", error);
+        res.status(500).json({ status: false, message: "Internal server error" });
     }
 };
 
-exports.updateProfile = async (req, res) => {
+exports.verifyPassword = async (req, res) => {
     try {
-        const adminId = req.user.id;
-        const { username, email } = req.body;
-        const updatedAdmin = await Admin.findByIdAndUpdate(adminId, { username, email }, { new: true }).select('-password');
-        if (!updatedAdmin) return res.status(404).json({ status: false, message: 'Admin not found' });
-        res.status(200).json({ status: true, message: 'Profile updated successfully', data: updatedAdmin });
+        const admin = await Admin.findById(req.user.id);
+        if (!admin) return res.status(404).json({ status: false, message: "User not found" });
+
+        const isMatch = await bcrypt.compare(req.body.password, admin.password);
+        if (!isMatch) {
+            return res.status(400).json({ status: false, message: "currect password not match" });
+        }
+
+        res.status(200).json({
+            status: true,
+            message: "currect password is correct",
+            currectPassword: true
+        });
     } catch (error) {
-        console.error('Update profile error:', error);
-        res.status(500).json({ status: false, message: 'Internal server error' });
+        console.error("Verify password error:", error);
+        res.status(500).json({ status: false, message: "Internal server error" });
     }
 };
-
