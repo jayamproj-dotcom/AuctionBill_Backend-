@@ -15,4 +15,7 @@ app.use("/api/admin", require("./routes/adminRoute"));
 //Subscription Routes
 app.use("/api/subscription", require("./routes/subscriptions.Route"));
 
+//Vendor Routes
+app.use("/api/vendor", require("./routes/vendorRoute"));
+
 module.exports = app;

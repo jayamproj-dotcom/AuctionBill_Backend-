@@ -1,11 +1,11 @@
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/adminMiddleware");
-const roleMiddleware = require("../middleware/roleMiddleware");
+const subscriptionAccessMiddleware = require("../middleware/subscriptionAccessMiddleware");
 const subscriptionController = require("../controllers/subscriptionController");
 
 // Apply middleware automatically to all routes in this router
-router.use(authMiddleware, roleMiddleware("admin"));
+router.use(authMiddleware, subscriptionAccessMiddleware);
 
 router.post("/", subscriptionController.createSubscription);
 router.get("/", subscriptionController.getAllSubscriptions);
