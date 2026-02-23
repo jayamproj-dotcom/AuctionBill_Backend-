@@ -4,134 +4,141 @@ const Admin = require("../models/admin");
 const sendEmail = require("../utils/sendEmail");
 
 exports.login = async (req, res) => {
-    try {
-        const { username, password } = req.body;
+  try {
+    const { username, password } = req.body;
 
-        const admin = await Admin.findOne({ username });
-        if (!admin) return res.status(400).json({ status: false, message: "User not found" });
+    const admin = await Admin.findOne({ username });
+    if (!admin) return res.status(400).json({ status: false, message: "User not found" });
 
-        const isMatch = await bcrypt.compare(password, admin.password);
-        if (!isMatch) return res.status(400).json({ status: false, message: "Invalid password" });
-
-        const token = jwt.sign(
-            { id: admin._id, role: admin.role },
-            process.env.JWT_SECRET,
-            { expiresIn: "1d" }
-        );
-
-        res.status(200).json({
-            status: true,
-            message: "Login successful",
-            token,
-            data: {
-                username: admin.username,
-                email: admin.email,
-                role: admin.role,
-                id: admin._id
-            }
-        });
-
-    } catch (error) {
-        console.error("Login error:", error);
-        res.status(500).json({ status: false, message: "Internal server error" });
+    if (admin.role === "sub-admin" && admin.status !== "Active") {
+      return res.status(403).json({ status: false, message: "Access denied. Account is not active." });
     }
+
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) return res.status(400).json({ status: false, message: "Invalid password" });
+
+    const token = jwt.sign(
+      { id: admin._id, role: admin.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    res.status(200).json({
+      status: true,
+      message: "Login successful",
+      token,
+      data: {
+        username: admin.username,
+        email: admin.email,
+        role: admin.role,
+        id: admin._id,
+        permissions: admin.permissions
+      }
+    });
+
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
 };
 
 exports.updateProfie = async (req, res) => {
-    try {
-        const { username, email } = req.body;
-        console.log(req.user);
-        const admin = await Admin.findOne({ _id: req.user.id });
-        if (!admin) return res.status(400).json({ status: false, message: "User not found" });
-        admin.username = username;
-        admin.email = email;
-        await admin.save();
-        res.status(200).json({ status: true, message: "Profile updated successfully", admin });
-    } catch (error) {
-        console.error("Update profile error:", error);
-        res.status(500).json({ status: false, message: "Internal server error" });
-    }
+  try {
+    const { username, email } = req.body;
+    console.log(req.user);
+    const admin = await Admin.findOne({ _id: req.user.id });
+    if (!admin) return res.status(400).json({ status: false, message: "User not found" });
+    admin.username = username;
+    admin.email = email;
+    await admin.save();
+    res.status(200).json({ status: true, message: "Profile updated successfully", admin });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
 }
 
 exports.updatePassword = async (req, res) => {
-    try {
-        const hashed = await bcrypt.hash(req.body.password, 10);
+  try {
+    const hashed = await bcrypt.hash(req.body.password, 10);
 
-        await Admin.updateOne(
-            { _id: req.user.id },
-            { password: hashed }
-        );
+    await Admin.updateOne(
+      { _id: req.user.id },
+      { password: hashed }
+    );
 
-        res.status(200).json({ status: true, message: "Password updated successfully" });
-    } catch (error) {
-        console.error("Update password error:", error);
-        res.status(500).json({ status: false, message: "Internal server error" });
-    }
+    res.status(200).json({ status: true, message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Update password error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
 };
 
 exports.getAdmin = async (req, res) => {
-    try {
-        const admin = await Admin.findById(req.user.id).select("-password");
-        if (!admin) return res.status(404).json({ status: false, message: "User not found" });
+  try {
+    const admin = await Admin.findById(req.user.id).select("-password");
+    if (!admin) return res.status(404).json({ status: false, message: "User not found" });
 
-        res.status(200).json({ status: true, admin });
-    } catch (error) {
-        console.error("Get admin error:", error);
-        res.status(500).json({ status: false, message: "Internal server error" });
-    }
+    res.status(200).json({ status: true, admin });
+  } catch (error) {
+    console.error("Get admin error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
 };
 
 exports.verifyPassword = async (req, res) => {
-    try {
-        const admin = await Admin.findById(req.user.id);
-        if (!admin) return res.status(404).json({ status: false, message: "User not found" });
+  try {
+    const admin = await Admin.findById(req.user.id);
+    if (!admin) return res.status(404).json({ status: false, message: "User not found" });
 
-        const isMatch = await bcrypt.compare(req.body.password, admin.password);
-        if (!isMatch) {
-            return res.status(400).json({ status: false, message: "currect password not match" });
-        }
-
-        res.status(200).json({
-            status: true,
-            message: "currect password is correct",
-            currectPassword: true
-        });
-    } catch (error) {
-        console.error("Verify password error:", error);
-        res.status(500).json({ status: false, message: "Internal server error" });
+    const isMatch = await bcrypt.compare(req.body.password, admin.password);
+    if (!isMatch) {
+      return res.status(400).json({ status: false, message: "currect password not match" });
     }
+
+    res.status(200).json({
+      status: true,
+      message: "currect password is correct",
+      currectPassword: true
+    });
+  } catch (error) {
+    console.error("Verify password error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
 };
 
 //sub admin
 exports.createSubAdmin = async (req, res) => {
-    try {
-        let { username, password, email, status, name } = req.body;
-        username = username || name;
+  try {
+    let { username, password, email, status, name } = req.body;
+    username = username || name;
 
-        if (!username) return res.status(400).json({ status: false, message: "Username is required" });
+    if (!username) return res.status(400).json({ status: false, message: "Username is required" });
 
-        const admin = await Admin.findOne({ username });
-        if (admin) return res.status(400).json({ status: false, message: "User already exists" });
-        const hashed = await bcrypt.hash(password, 10);
-        const newAdmin = new Admin({
-            username,
-            password: hashed,
-            email,
-            role: "sub-admin",
-            status,
-            permissions: {
-                vendorAdd: false,
-                subscriptionAccess: false,
-                passwordChange: false
-            }
-        });
-        await newAdmin.save();
+    const admin = await Admin.findOne({ username });
+    if (admin) return res.status(400).json({ status: false, message: "User already exists" });
+    const hashed = await bcrypt.hash(password, 10);
+    const newAdmin = new Admin({
+      username,
+      password: hashed,
+      email,
+      role: "sub-admin",
+      status,
+      permissions: {
+        vendorAdd: false,
+        subscriptionAccess: false,
+        passwordChange: false
+      },
+      createdBy: req.user?.id,
+      updatedBy: req.user?.id
+    });
+    await newAdmin.save();
 
-        // Send email
-        await sendEmail(
-            email,
-            "Sub Admin Account Created",
-            `
+    // Send email
+    await sendEmail(
+      email,
+      "Sub Admin Account Created",
+      `
   <!DOCTYPE html>
   <html>
   <head>
@@ -226,68 +233,69 @@ exports.createSubAdmin = async (req, res) => {
   </body>
   </html>
   `
-        );
+    );
 
-        res.status(200).json({ status: true, message: "Sub-admin created successfully", newAdmin });
-    } catch (error) {
-        console.error("Create sub-admin error:", error);
-        res.status(500).json({ status: false, message: "Internal server error" });
-    }
+    res.status(200).json({ status: true, message: "Sub-admin created successfully", newAdmin });
+  } catch (error) {
+    console.error("Create sub-admin error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
 }
 
 exports.getSubAdmins = async (req, res) => {
-    try {
-        const subAdmins = await Admin.find({ role: "sub-admin" }).select("-password");
-        res.status(200).json({ status: true, subAdmins });
-    } catch (error) {
-        console.error("Get sub-admins error:", error);
-        res.status(500).json({ status: false, message: "Internal server error" });
-    }
+  try {
+    const subAdmins = await Admin.find({ role: "sub-admin" }).select("-password");
+    res.status(200).json({ status: true, subAdmins });
+  } catch (error) {
+    console.error("Get sub-admins error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
 };
 
 exports.updateSubAdmin = async (req, res) => {
-    try {
-        const { id } = req.params;
-        let { username, email, status, permissions, name } = req.body;
-        username = username || name;
+  try {
+    const { id } = req.params;
+    let { username, email, status, permissions, name } = req.body;
+    username = username || name;
 
-        const subAdmin = await Admin.findById(id);
-        if (!subAdmin || subAdmin.role !== "sub-admin") {
-            return res.status(404).json({ status: false, message: "Sub-admin not found" });
-        }
-
-        if (username) subAdmin.username = username;
-        if (email) subAdmin.email = email;
-        if (status) subAdmin.status = status;
-        if (permissions) subAdmin.permissions = { ...subAdmin.permissions, ...permissions };
-
-        // Ensure we don't accidentally update the password this way
-        if (req.body.password) {
-            subAdmin.password = await bcrypt.hash(req.body.password, 10);
-        }
-
-        await subAdmin.save();
-        res.status(200).json({ status: true, message: "Sub-admin updated successfully", subAdmin });
-    } catch (error) {
-        console.error("Update sub-admin error:", error);
-        res.status(500).json({ status: false, message: "Internal server error" });
+    const subAdmin = await Admin.findById(id);
+    if (!subAdmin || subAdmin.role !== "sub-admin") {
+      return res.status(404).json({ status: false, message: "Sub-admin not found" });
     }
+
+    if (username) subAdmin.username = username;
+    if (email) subAdmin.email = email;
+    if (status) subAdmin.status = status;
+    if (permissions) subAdmin.permissions = { ...subAdmin.permissions, ...permissions };
+
+    // Ensure we don't accidentally update the password this way
+    if (req.body.password) {
+      subAdmin.password = await bcrypt.hash(req.body.password, 10);
+    }
+
+    subAdmin.updatedBy = req.user?.id;
+    await subAdmin.save();
+    res.status(200).json({ status: true, message: "Sub-admin updated successfully", subAdmin });
+  } catch (error) {
+    console.error("Update sub-admin error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
 };
 
 exports.deleteSubAdmin = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const subAdmin = await Admin.findOneAndDelete({ _id: id, role: "sub-admin" });
+  try {
+    const { id } = req.params;
+    const subAdmin = await Admin.findOneAndDelete({ _id: id, role: "sub-admin" });
 
-        if (!subAdmin) {
-            return res.status(404).json({ status: false, message: "Sub-admin not found" });
-        }
+    if (!subAdmin) {
+      return res.status(404).json({ status: false, message: "Sub-admin not found" });
+    }
 
-        // Send delete email
-        await sendEmail(
-            subAdmin.email,
-            "Account Deleted",
-            `
+    // Send delete email
+    await sendEmail(
+      subAdmin.email,
+      "Account Deleted",
+      `
   <!DOCTYPE html>
   <html>
   <body style="margin:0; padding:0; background:#f4f6f8; font-family:Arial;">
@@ -327,11 +335,11 @@ exports.deleteSubAdmin = async (req, res) => {
   </body>
   </html>
   `
-        );
+    );
 
-        res.status(200).json({ status: true, message: "Sub-admin deleted successfully" });
-    } catch (error) {
-        console.error("Delete sub-admin error:", error);
-        res.status(500).json({ status: false, message: "Internal server error" });
-    }
+    res.status(200).json({ status: true, message: "Sub-admin deleted successfully" });
+  } catch (error) {
+    console.error("Delete sub-admin error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
 };

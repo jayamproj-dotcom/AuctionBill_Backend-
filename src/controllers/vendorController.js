@@ -31,16 +31,18 @@ exports.createVendor = async (req, res) => {
             phone,
             address,
             plan,
-            status: status || "Active"
+            status: status || "Active",
+            createdBy: req.user?.id,
+            updatedBy: req.user?.id
         });
 
         await newVendor.save();
 
         // Send Email to Vendor
         const planName = planExists.name || "Default Plan";
-        const planPrice = planExists.price !== undefined ?`$${planExists.price}` : "N/A";
+        const planPrice = planExists.price !== undefined ? `$${planExists.price}` : "N/A";
         const planDuration = `${planExists.durationValue || 1} ${planExists.durationType || 'month'}(s)`;
-        
+
         const emailContent = `
   <!DOCTYPE html>
   <html>
@@ -158,11 +160,11 @@ exports.updateVendor = async (req, res) => {
             activePlanData = await Plan.findById(vendor.plan);
         }
 
-        const isProfileChanged = (name && vendor.name !== name) || 
-                                 (email && vendor.email !== email) || 
-                                 (phone && vendor.phone !== phone) || 
-                                 (address && vendor.address !== address) || 
-                                 (status && vendor.status !== status);
+        const isProfileChanged = (name && vendor.name !== name) ||
+            (email && vendor.email !== email) ||
+            (phone && vendor.phone !== phone) ||
+            (address && vendor.address !== address) ||
+            (status && vendor.status !== status);
 
         if (name) vendor.name = name;
         if (email) vendor.email = email;
@@ -170,14 +172,15 @@ exports.updateVendor = async (req, res) => {
         if (address) vendor.address = address;
         if (status) vendor.status = status;
 
+        vendor.updatedBy = req.user?.id;
         await vendor.save();
 
         if (isProfileChanged || plan) {
-             const planName = activePlanData ? activePlanData.name : "Default Plan";
-             const planPrice = activePlanData && activePlanData.price !== undefined ? `$${activePlanData.price}` : "N/A";
-             const planDuration = activePlanData ? `${activePlanData.durationValue || 1} ${activePlanData.durationType || 'month'}(s)` : "N/A";
-             
-             const updateEmailContent = `
+            const planName = activePlanData ? activePlanData.name : "Default Plan";
+            const planPrice = activePlanData && activePlanData.price !== undefined ? `$${activePlanData.price}` : "N/A";
+            const planDuration = activePlanData ? `${activePlanData.durationValue || 1} ${activePlanData.durationType || 'month'}(s)` : "N/A";
+
+            const updateEmailContent = `
    <!DOCTYPE html>
    <html>
    <head>
@@ -253,8 +256,8 @@ exports.updateVendor = async (req, res) => {
    </body>
    </html>
              `;
-             
-             await sendEmail(vendor.email, "Your Vendor Account Info Has Been Updated", updateEmailContent);
+
+            await sendEmail(vendor.email, "Your Vendor Account Info Has Been Updated", updateEmailContent);
         }
 
         res.status(200).json({ status: true, message: "Vendor updated successfully", vendor });

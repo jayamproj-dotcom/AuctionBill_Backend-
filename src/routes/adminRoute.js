@@ -31,4 +31,7 @@ router.get(
     adminController.getAdmin
 );
 
+// Get Profile for both Admin and Sub-Admin
+router.get("/profile", authMiddleware, adminController.getAdmin);
+
 module.exports = router;
