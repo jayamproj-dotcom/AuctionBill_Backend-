@@ -159,7 +159,7 @@ exports.createSubAdmin = async (req, res) => {
             <!-- Header -->
             <tr>
               <td align="center" 
-                  style="background:#2c3e50; padding:25px; color:#ffffff;">
+                  style="background:#f39c12; padding:25px; color:#ffffff;">
                 <h1 style="margin:0; font-size:24px;">
                  ${process.env.COMPANY_NAME}
                 </h1>
@@ -195,14 +195,10 @@ exports.createSubAdmin = async (req, res) => {
                   </tr>
                 </table>
 
-                <p style="margin-top:20px;">
-                  Please change your password after your first login for security reasons.
-                </p>
-
                 <!-- Button -->
                 <div style="text-align:center; margin-top:25px;">
                   <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/auctionbilling/saas-admin" 
-                     style="background:#27ae60; color:#ffffff; 
+                     style="background:#f39c12; color:#ffffff; 
                             padding:12px 25px; text-decoration:none; 
                             border-radius:5px; font-weight:bold;">
                     Login Now
@@ -255,7 +251,7 @@ exports.getSubAdmins = async (req, res) => {
 exports.updateSubAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-    let { username, email, status, permissions, name } = req.body;
+    let { username, email, status, permissions, name, password } = req.body;
     username = username || name;
 
     const subAdmin = await Admin.findById(id);
@@ -269,12 +265,95 @@ exports.updateSubAdmin = async (req, res) => {
     if (permissions) subAdmin.permissions = { ...subAdmin.permissions, ...permissions };
 
     // Ensure we don't accidentally update the password this way
-    if (req.body.password) {
-      subAdmin.password = await bcrypt.hash(req.body.password, 10);
+    if (password) {
+      subAdmin.password = await bcrypt.hash(password, 10);
     }
 
     subAdmin.updatedBy = req.user?.id;
     await subAdmin.save();
+
+    // Send email notification for update
+    await sendEmail(
+      subAdmin.email,
+      "Sub Admin Account Updated",
+      `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Account Updated</title>
+  </head>
+  <body style="margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td align="center">
+          <table width="600" cellpadding="0" cellspacing="0" border="0" 
+                 style="background:#ffffff; margin:40px 0; border-radius:8px; overflow:hidden;">
+            <tr>
+              <td align="center" 
+                  style="background:#f39c12; padding:25px; color:#ffffff;">
+                <h1 style="margin:0; font-size:24px;">
+                 ${process.env.COMPANY_NAME || 'AuctionBilling'}
+                </h1>
+                <p style="margin:5px 0 0; font-size:14px;">
+                  Sub Admin Account Updated
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:30px; color:#333333;">
+                <h2 style="margin-top:0;">Hello ${username},</h2>
+
+                <p>
+                  Your Sub Admin account has been successfully created.
+                  Below are your login details:
+                </p>
+
+                <table width="100%" cellpadding="8" cellspacing="0" 
+                       style="background:#f8f9fa; border-radius:6px;">
+                  <tr>
+                    <td><strong>Username:</strong></td>
+                    <td>${username}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Email:</strong></td>
+                    <td>${email}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Password:</strong></td>
+                    <td>${password ? password : '<i>(Unchanged)</i>'}</td>
+                  </tr>
+                </table>
+                <p>
+                  Your Sub Admin account details or permissions have been updated by the administrator.
+                </p>
+                <div style="text-align:center; margin-top:25px;">
+                  <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/auctionbilling/saas-admin" 
+                     style="background:#f39c12; color:#ffffff; 
+                            padding:12px 25px; text-decoration:none; 
+                            border-radius:5px; font-weight:bold;">
+                    Review Account
+                  </a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" 
+                  style="background:#f1f1f1; padding:20px; font-size:12px; color:#777;">
+                <p style="margin:0;">
+                  © ${new Date().getFullYear()} ${process.env.COMPANY_NAME || 'AuctionBilling'}. All rights reserved.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+  </html>
+      `
+    );
+
     res.status(200).json({ status: true, message: "Sub-admin updated successfully", subAdmin });
   } catch (error) {
     console.error("Update sub-admin error:", error);
