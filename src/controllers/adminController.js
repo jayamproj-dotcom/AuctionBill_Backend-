@@ -48,6 +48,21 @@ exports.updateProfie = async (req, res) => {
     console.log(req.user);
     const admin = await Admin.findOne({ _id: req.user.id });
     if (!admin) return res.status(400).json({ status: false, message: "User not found" });
+
+    const existingUser = await Admin.findOne({
+      $or: [{ username }, { email }],
+      _id: { $ne: req.user.id }
+    });
+
+    if (existingUser) {
+      if (existingUser.username === username) {
+        return res.status(400).json({ status: false, message: "Username is already in use" });
+      }
+      if (existingUser.email === email) {
+        return res.status(400).json({ status: false, message: "Email is already in use" });
+      }
+    }
+
     admin.username = username;
     admin.email = email;
     await admin.save();
@@ -115,8 +130,11 @@ exports.createSubAdmin = async (req, res) => {
 
     if (!username) return res.status(400).json({ status: false, message: "Username is required" });
 
-    const admin = await Admin.findOne({ username });
-    if (admin) return res.status(400).json({ status: false, message: "User already exists" });
+    const adminNameExists = await Admin.findOne({ username });
+    if (adminNameExists) return res.status(400).json({ status: false, message: "Name is already in use" });
+
+    const adminEmailExists = await Admin.findOne({ email });
+    if (adminEmailExists) return res.status(400).json({ status: false, message: "Email is already in use" });
     const hashed = await bcrypt.hash(password, 10);
     const newAdmin = new Admin({
       username,
@@ -257,6 +275,16 @@ exports.updateSubAdmin = async (req, res) => {
     const subAdmin = await Admin.findById(id);
     if (!subAdmin || subAdmin.role !== "sub-admin") {
       return res.status(404).json({ status: false, message: "Sub-admin not found" });
+    }
+
+    if (username && username !== subAdmin.username) {
+      const nameExists = await Admin.findOne({ username });
+      if (nameExists) return res.status(400).json({ status: false, message: "Name is already in use" });
+    }
+
+    if (email && email !== subAdmin.email) {
+      const emailExists = await Admin.findOne({ email });
+      if (emailExists) return res.status(400).json({ status: false, message: "Email is already in use" });
     }
 
     if (username) subAdmin.username = username;
