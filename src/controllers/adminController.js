@@ -10,6 +10,10 @@ exports.login = async (req, res) => {
     const admin = await Admin.findOne({ username });
     if (!admin) return res.status(400).json({ status: false, message: "User not found" });
 
+    if (admin.role === "sub-admin" && admin.status !== "Active") {
+      return res.status(403).json({ status: false, message: "Access denied. Account is not active." });
+    }
+
     const isMatch = await bcrypt.compare(password, admin.password);
     if (!isMatch) return res.status(400).json({ status: false, message: "Invalid password" });
 
@@ -27,7 +31,8 @@ exports.login = async (req, res) => {
         username: admin.username,
         email: admin.email,
         role: admin.role,
-        id: admin._id
+        id: admin._id,
+        permissions: admin.permissions
       }
     });
 
@@ -123,7 +128,9 @@ exports.createSubAdmin = async (req, res) => {
         vendorAdd: false,
         subscriptionAccess: false,
         passwordChange: false
-      }
+      },
+      createdBy: req.user?.id,
+      updatedBy: req.user?.id
     });
     await newAdmin.save();
 
@@ -266,6 +273,7 @@ exports.updateSubAdmin = async (req, res) => {
       subAdmin.password = await bcrypt.hash(req.body.password, 10);
     }
 
+    subAdmin.updatedBy = req.user?.id;
     await subAdmin.save();
     res.status(200).json({ status: true, message: "Sub-admin updated successfully", subAdmin });
   } catch (error) {

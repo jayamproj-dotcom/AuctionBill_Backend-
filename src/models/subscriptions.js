@@ -35,7 +35,12 @@ const planSchema = new mongoose.Schema({
         {
             type: String
         }
-    ]
+    ],
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+    deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date }
 }, { timestamps: true });
 
 // Auto increment planId

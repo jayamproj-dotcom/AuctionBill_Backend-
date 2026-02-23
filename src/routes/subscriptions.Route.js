@@ -4,13 +4,13 @@ const authMiddleware = require("../middleware/adminMiddleware");
 const subscriptionAccessMiddleware = require("../middleware/subscriptionAccessMiddleware");
 const subscriptionController = require("../controllers/subscriptionController");
 
-// Apply middleware automatically to all routes in this router
-router.use(authMiddleware, subscriptionAccessMiddleware);
+// Apply authMiddleware to all routes for token validation
+router.use(authMiddleware);
 
-router.post("/", subscriptionController.createSubscription);
+router.post("/", subscriptionAccessMiddleware, subscriptionController.createSubscription);
 router.get("/", subscriptionController.getAllSubscriptions);
 router.get("/:id", subscriptionController.getSubscriptionById);
-router.put("/:id", subscriptionController.updateSubscription);
-router.delete("/:id", subscriptionController.deleteSubscription);
+router.put("/:id", subscriptionAccessMiddleware, subscriptionController.updateSubscription);
+router.delete("/:id", subscriptionAccessMiddleware, subscriptionController.deleteSubscription);
 
 module.exports = router;

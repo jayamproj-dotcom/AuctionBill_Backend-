@@ -11,7 +11,12 @@ const vendorSchema = new mongoose.Schema({
     joinedDate: { type: Date, default: Date.now },
     lastLogin: { type: Date },
     totalAuctions: { type: Number, default: 0 },
-    revenue: { type: String, default: "0" }
+    revenue: { type: String, default: "0" },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+    deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date }
 }, { timestamps: true });
 
 module.exports = mongoose.model("Vendor", vendorSchema);

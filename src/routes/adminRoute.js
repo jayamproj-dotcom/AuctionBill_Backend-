@@ -29,5 +29,8 @@ router.post('/update-password', authMiddleware, adminController.updatePassword);
 router.get('/profile', authMiddleware, adminController.getAdmin);
 router.put('/profile', authMiddleware, adminController.updateProfie);
 
+// Get Profile for both Admin and Sub-Admin
+router.get("/profile", authMiddleware, adminController.getAdmin);
+
 module.exports = router;
 
