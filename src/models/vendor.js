@@ -9,7 +9,7 @@ const vendorSchema = new mongoose.Schema({
     plan: { type: mongoose.Schema.Types.ObjectId, ref: "Plan", required: true },
     status: { type: String, enum: ["Active", "Inactive", "Pending"], default: "Active" },
     joinedDate: { type: Date, default: Date.now },
-    lastLogin: { type: Date },
+    planEndDate: { type: Date },
     totalAuctions: { type: Number, default: 0 },
     revenue: { type: String, default: "0" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
