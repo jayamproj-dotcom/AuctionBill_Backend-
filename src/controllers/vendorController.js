@@ -14,10 +14,14 @@ exports.createVendor = async (req, res) => {
       return res.status(400).json({ status: false, message: "Invalid subscription plan." });
     }
 
-    // Check if vendor email already exists
-    const vendorExists = await Vendor.findOne({ email });
-    if (vendorExists) {
-      return res.status(400).json({ status: false, message: "Vendor with this email already exists." });
+    const vendorNameExists = await Vendor.findOne({ name });
+    if (vendorNameExists) {
+      return res.status(400).json({ status: false, message: "Name is already in use" });
+    }
+
+    const vendorEmailExists = await Vendor.findOne({ email });
+    if (vendorEmailExists) {
+      return res.status(400).json({ status: false, message: "Email is already in use" });
     }
 
     // Generate a random 8-character password
@@ -153,6 +157,20 @@ exports.updateVendor = async (req, res) => {
     const vendor = await Vendor.findById(id);
     if (!vendor) {
       return res.status(404).json({ status: false, message: "Vendor not found" });
+    }
+
+    if (name && name !== vendor.name) {
+      const nameExists = await Vendor.findOne({ name });
+      if (nameExists) {
+        return res.status(400).json({ status: false, message: "Name is already in use" });
+      }
+    }
+
+    if (email && email !== vendor.email) {
+      const emailExists = await Vendor.findOne({ email });
+      if (emailExists) {
+        return res.status(400).json({ status: false, message: "Email is already in use" });
+      }
     }
 
     let activePlanData = null;
