@@ -1,12 +1,59 @@
 const Vendor = require("../models/vendor");
+const jwt = require("jsonwebtoken");
 const Plan = require("../models/subscriptions");
 const Admin = require("../models/admin");
 const bcrypt = require("bcryptjs");
 const sendEmail = require("../utils/sendEmail");
 
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const vendor = await Vendor.findOne({ email }).populate("plan", "name planId");
+    if (!vendor) {
+      return res.status(401).json({ status: false, message: "Invalid email or password" });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, vendor.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ status: false, message: "Invalid email or password" });
+    }
+
+    if (vendor.status !== "Active") {
+      return res.status(403).json({ status: false, message: "Your account is not active. Please contact support." });
+    }
+
+    if (vendor.planEndDate && new Date() > new Date(vendor.planEndDate)) {
+      return res.status(403).json({ status: false, message: "Your subscription plan has expired. Please renew to continue." });
+    }
+
+    const token = jwt.sign({ id: vendor._id, role: "vendor" }, process.env.JWT_SECRET, { expiresIn: "1d" });
+
+    const vendorData = vendor.toObject();
+    delete vendorData.password;
+
+    res.status(200).json({
+      status: true,
+      message: "Login successful",
+      token,
+      user: {
+        ...vendorData,
+        role: "vendor"
+      }
+    });
+  } catch (error) {
+    console.error("Vendor login error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
 exports.createVendor = async (req, res) => {
   try {
-    const { name, email, phone, address, plan, status } = req.body;
+    let { name, email, phone, address, plan, status, profilePic } = req.body;
+
+    if (req.file) {
+      profilePic = `/uploads/vendors/${req.file.filename}`;
+    }
 
     // Check if plan exists
     const planExists = await Plan.findById(plan);
@@ -40,6 +87,7 @@ exports.createVendor = async (req, res) => {
       email,
       password: hashedPassword,
       phone,
+      profilePic,
       address,
       plan,
       planEndDate,
@@ -82,7 +130,7 @@ exports.createVendor = async (req, res) => {
                 
                 <table width="100%" cellpadding="8" cellspacing="0" style="background:#f8f9fa; border-radius:6px; margin-bottom:20px;">
                   <tr>
-                    <td><strong>Email (Username):</strong></td>
+                    <td><strong>Email:</strong></td>
                     <td>${email}</td>
                   </tr>
                   <tr>
@@ -152,7 +200,11 @@ exports.getVendors = async (req, res) => {
 exports.updateVendor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, phone, address, plan, status } = req.body;
+    let { name, email, phone, address, plan, status, profilePic } = req.body;
+
+    if (req.file) {
+      profilePic = `/uploads/vendors/${req.file.filename}`;
+    }
 
     const vendor = await Vendor.findById(id);
     if (!vendor) {
@@ -198,13 +250,15 @@ exports.updateVendor = async (req, res) => {
       (email && vendor.email !== email) ||
       (phone && vendor.phone !== phone) ||
       (address && vendor.address !== address) ||
-      (status && vendor.status !== status);
+      (status && vendor.status !== status) ||
+      (profilePic !== undefined && vendor.profilePic !== profilePic);
 
     if (name) vendor.name = name;
     if (email) vendor.email = email;
     if (phone) vendor.phone = phone;
     if (address) vendor.address = address;
     if (status) vendor.status = status;
+    if (profilePic !== undefined) vendor.profilePic = profilePic;
 
     vendor.updatedBy = req.user?.id;
     await vendor.save();

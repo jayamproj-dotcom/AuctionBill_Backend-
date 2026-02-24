@@ -5,6 +5,7 @@ const vendorSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     phone: { type: String, required: true },
+    profilePic: { type: String },
     address: { type: String },
     plan: { type: mongoose.Schema.Types.ObjectId, ref: "Plan", required: true },
     status: { type: String, enum: ["Active", "Inactive", "Pending"], default: "Active" },
