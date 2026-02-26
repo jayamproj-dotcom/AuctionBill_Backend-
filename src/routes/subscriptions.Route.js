@@ -4,12 +4,14 @@ const authMiddleware = require("../middleware/adminMiddleware");
 const subscriptionAccessMiddleware = require("../middleware/subscriptionAccessMiddleware");
 const subscriptionController = require("../controllers/subscriptionController");
 
-// Apply authMiddleware to all routes for token validation
+// Publicly accessible for signup page
+router.get("/", subscriptionController.getAllSubscriptions);
+router.get("/:id", subscriptionController.getSubscriptionById);
+
+// Apply authMiddleware to administrative routes
 router.use(authMiddleware);
 
 router.post("/", subscriptionAccessMiddleware, subscriptionController.createSubscription);
-router.get("/", subscriptionController.getAllSubscriptions);
-router.get("/:id", subscriptionController.getSubscriptionById);
 router.put("/:id", subscriptionAccessMiddleware, subscriptionController.updateSubscription);
 router.delete("/:id", subscriptionAccessMiddleware, subscriptionController.deleteSubscription);
 

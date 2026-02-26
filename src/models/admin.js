@@ -14,8 +14,11 @@ const adminSchema = new mongoose.Schema({
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
   deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
-  isDeleted: { type: Boolean, default: false },
-  deletedAt: { type: Date }
+  // isDeleted: { type: Boolean, default: false },
+  // deletedAt: { type: Date }
+  otp: { type: String },
+  otpExpires: { type: Date }
 }, { timestamps: true });
+
 
 module.exports = mongoose.model("Admin", adminSchema);

@@ -4,6 +4,7 @@ const Plan = require("../models/subscriptions");
 const Admin = require("../models/admin");
 const bcrypt = require("bcryptjs");
 const sendEmail = require("../utils/sendEmail");
+const ExcelJS = require('exceljs');
 
 exports.login = async (req, res) => {
   try {
@@ -47,9 +48,125 @@ exports.login = async (req, res) => {
   }
 };
 
+exports.signup = async (req, res) => {
+  try {
+    let { name, email, password, phone, address, city, state, plan } = req.body;
+    let profilePic = "";
+
+    if (req.file) {
+      profilePic = `/uploads/vendors/${req.file.filename}`;
+    }
+
+    // Check if plan exists
+    const planExists = await Plan.findById(plan);
+    if (!planExists) {
+      return res.status(400).json({ status: false, message: "Invalid subscription plan." });
+    }
+
+    const vendorEmailExists = await Vendor.findOne({ email });
+    if (vendorEmailExists) {
+      return res.status(400).json({ status: false, message: "Email is already in use" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    let planEndDate = new Date();
+    if (planExists.durationType === "year") {
+      planEndDate.setFullYear(planEndDate.getFullYear() + (planExists.durationValue || 1));
+    } else {
+      planEndDate.setMonth(planEndDate.getMonth() + (planExists.durationValue || 1));
+    }
+
+    const newVendor = new Vendor({
+      name,
+      email,
+      password: hashedPassword,
+      phone,
+      profilePic,
+      address,
+      city,
+      state,
+      plan,
+      planEndDate,
+      status: "Pending", // Initial status for signup
+    });
+
+    await newVendor.save();
+
+    // Send Email to Admin/Vendor (Optional, but good for confirmation)
+    const emailContent = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Subscription Request Received</title>
+  </head>
+  <body style="margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td align="center">
+          <table width="600" cellpadding="0" cellspacing="0" border="0" 
+                 style="background:#ffffff; margin:40px 0; border-radius:8px; overflow:hidden;">
+            <tr>
+              <td align="center" style="background:#f39c12; padding:25px; color:#ffffff;">
+                <h1 style="margin:0; font-size:24px;">${process.env.COMPANY_NAME || "AuctionBilling"}</h1>
+                <p style="margin:5px 0 0; font-size:14px;">Subscription Request</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:30px; color:#333333;">
+                <h2 style="margin-top:0;">Hello ${name},</h2>
+                <p>Thank you for choosing ${process.env.COMPANY_NAME || "AuctionBilling"}! Your subscription request has been received and is currently being processed.</p>
+                <p>Our administrator will review your application and activate your account soon.</p>
+                
+                <h3 style="margin-top:20px; margin-bottom:10px;">Request Details:</h3>
+                <table width="100%" cellpadding="8" cellspacing="0" style="background:#f8f9fa; border-radius:6px; margin-bottom:20px;">
+                  <tr>
+                    <td><strong>Email:</strong></td>
+                    <td>${email}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Assigned Plan:</strong></td>
+                    <td>${planExists.name || "Default Plan"}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Location:</strong></td>
+                    <td>${city}, ${state}</td>
+                  </tr>
+                </table>
+                
+                <p>We'll notify you once your account is active.</p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="background:#f1f1f1; padding:20px; font-size:12px; color:#777;">
+                <p style="margin:0;">© ${new Date().getFullYear()} ${process.env.COMPANY_NAME || "AuctionBilling"}. All rights reserved.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+  </html>
+        `;
+
+    try {
+      await sendEmail(email, "Your Subscription Request Has Been Received", emailContent);
+    } catch (emailErr) {
+      console.error("Email error:", emailErr);
+    }
+
+    res.status(201).json({ status: true, message: "Subscription request submitted successfully. Please wait for admin approval.", vendor: newVendor });
+  } catch (error) {
+    console.error("Signup error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
 exports.createVendor = async (req, res) => {
   try {
-    let { name, email, phone, address, plan, status, profilePic } = req.body;
+    let { name, email, phone, address, city, state, plan, status, profilePic } = req.body;
 
     if (req.file) {
       profilePic = `/uploads/vendors/${req.file.filename}`;
@@ -76,7 +193,7 @@ exports.createVendor = async (req, res) => {
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
     let planEndDate = new Date();
-    if (planExists.durationType === 'year') {
+    if (planExists.durationType === "year") {
       planEndDate.setFullYear(planEndDate.getFullYear() + (planExists.durationValue || 1));
     } else {
       planEndDate.setMonth(planEndDate.getMonth() + (planExists.durationValue || 1));
@@ -89,11 +206,13 @@ exports.createVendor = async (req, res) => {
       phone,
       profilePic,
       address,
+      city,
+      state,
       plan,
       planEndDate,
       status: status || "Active",
       createdBy: req.user?.id,
-      updatedBy: req.user?.id
+      updatedBy: req.user?.id,
     });
 
     await newVendor.save();
@@ -200,7 +319,7 @@ exports.getVendors = async (req, res) => {
 exports.updateVendor = async (req, res) => {
   try {
     const { id } = req.params;
-    let { name, email, phone, address, plan, status, profilePic } = req.body;
+    let { name, email, phone, address, city, state, plan, status, profilePic } = req.body;
 
     if (req.file) {
       profilePic = `/uploads/vendors/${req.file.filename}`;
@@ -250,6 +369,8 @@ exports.updateVendor = async (req, res) => {
       (email && vendor.email !== email) ||
       (phone && vendor.phone !== phone) ||
       (address && vendor.address !== address) ||
+      (city && vendor.city !== city) ||
+      (state && vendor.state !== state) ||
       (status && vendor.status !== status) ||
       (profilePic !== undefined && vendor.profilePic !== profilePic);
 
@@ -257,6 +378,8 @@ exports.updateVendor = async (req, res) => {
     if (email) vendor.email = email;
     if (phone) vendor.phone = phone;
     if (address) vendor.address = address;
+    if (city) vendor.city = city;
+    if (state) vendor.state = state;
     if (status) vendor.status = status;
     if (profilePic !== undefined) vendor.profilePic = profilePic;
 
@@ -404,6 +527,240 @@ exports.deleteVendor = async (req, res) => {
     res.status(200).json({ status: true, message: "Vendor deleted successfully" });
   } catch (error) {
     console.error("Delete vendor error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const vendorId = req.user.id;
+
+    const vendor = await Vendor.findById(vendorId);
+    if (!vendor) {
+      return res.status(404).json({ status: false, message: "Vendor not found" });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, vendor.password);
+    if (!isMatch) {
+      return res.status(400).json({ status: false, message: "Incorrect current password" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    vendor.password = hashedPassword;
+    await vendor.save();
+
+    res.status(200).json({ status: true, message: "Password changed successfully" });
+  } catch (error) {
+    console.error("Change password error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const vendor = await Vendor.findOne({ email });
+
+    if (!vendor) {
+      return res.status(404).json({ status: false, message: "Vendor with this email does not exist" });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    vendor.otp = otp;
+    vendor.otpExpires = otpExpires;
+    await vendor.save();
+
+    const emailContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Password Reset OTP</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center">
+
+        <!-- Main Container -->
+        <table width="600" cellpadding="0" cellspacing="0"
+          style="background:#ffffff; margin:40px 0; border-radius:10px; overflow:hidden;">
+
+          <!-- ===== HEADER ===== -->
+          <tr>
+            <td align="center" style="background:#f39c12; padding:25px; color:#ffffff;">
+              <h1 style="margin:0; font-size:22px;">
+                ${process.env.COMPANY_NAME || "AuctionBilling"}
+              </h1>
+              <p style="margin:5px 0 0; font-size:14px;">Password Reset Request</p>
+            </td>
+          </tr>
+
+          <!-- ===== BODY ===== -->
+          <tr>
+            <td style="padding:30px; color:#333;">
+              <h2 style="margin-top:0;">Hello ${vendor.name},</h2>
+              <p style="font-size:16px; color:#555;">
+                You requested a password reset. Use the OTP below to reset your password.
+                This OTP is valid for <strong>5 minutes</strong>.
+              </p>
+
+              <div style="text-align:center; margin:30px 0;">
+                <span style="
+                  font-size:32px;
+                  font-weight:bold;
+                  letter-spacing:6px;
+                  color:#f39c12;
+                  padding:12px 25px;
+                  background:#f9f9f9;
+                  border-radius:8px;
+                  border:2px dashed #f39c12;
+                  display:inline-block;
+                ">
+                  ${otp}
+                </span>
+              </div>
+
+              <p style="font-size:14px; color:#888;">
+                If you did not request this password reset, please ignore this email.
+              </p>
+            </td>
+          </tr>
+
+          <!-- ===== FOOTER ===== -->
+          <tr>
+            <td align="center"
+              style="background:#f1f1f1; padding:20px; font-size:12px; color:#777;">
+              © ${new Date().getFullYear()}
+              ${process.env.COMPANY_NAME || "AuctionBilling"}.
+              All rights reserved.
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`;
+
+    await sendEmail(email, "Password Reset OTP", emailContent);
+
+    res.status(200).json({ status: true, message: "OTP sent to your email" });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    const vendor = await Vendor.findOne({
+      email,
+      otp,
+      otpExpires: { $gt: Date.now() }
+    });
+
+    if (!vendor) {
+      return res.status(400).json({ status: false, message: "Invalid or expired OTP" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    vendor.password = hashedPassword;
+    vendor.otp = undefined;
+    vendor.otpExpires = undefined;
+    await vendor.save();
+
+    res.status(200).json({ status: true, message: "Password reset successfully" });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.exportVendors = async (req, res) => {
+  try {
+    const { state, city, plan, status, from, to, search } = req.body;
+
+    let query = {};
+
+    if (state) query.state = state;
+    if (city) query.city = city;
+    if (plan) query.plan = plan;
+    if (status) query.status = status;
+    
+    if (from || to) {
+      query.joinedDate = {};
+      if (from) query.joinedDate.$gte = new Date(from);
+      if (to) {
+        let toDate = new Date(to);
+        toDate.setHours(23, 59, 59, 999);
+        query.joinedDate.$lte = toDate;
+      }
+    }
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { phone: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const vendors = await Vendor.find(query).populate("plan");
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Vendors');
+
+    worksheet.columns = [
+      { header: 'Vendor Name', key: 'name', width: 25 },
+      { header: 'Email', key: 'email', width: 30 },
+      { header: 'Phone', key: 'phone', width: 15 },
+      { header: 'Address', key: 'address', width: 30 },
+      { header: 'City', key: 'city', width: 15 },
+      { header: 'State', key: 'state', width: 15 },
+      { header: 'Status', key: 'status', width: 12 },
+      { header: 'Plan Name', key: 'planName', width: 20 },
+      { header: 'Plan Price', key: 'planPrice', width: 12 },
+      { header: 'Joined Date', key: 'joinedDate', width: 20 },
+      { header: 'Expiry Date', key: 'planEndDate', width: 20 },
+    ];
+
+    // Style the header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+    vendors.forEach(vendor => {
+      worksheet.addRow({
+        name: vendor.name,
+        email: vendor.email,
+        phone: vendor.phone,
+        address: vendor.address || 'N/A',
+        city: vendor.city || 'N/A',
+        state: vendor.state || 'N/A',
+        status: vendor.status,
+        planName: vendor.plan?.name || 'N/A',
+        planPrice: vendor.plan?.price || '0',
+        joinedDate: vendor.joinedDate ? new Date(vendor.joinedDate).toLocaleDateString() : 'N/A',
+        planEndDate: vendor.planEndDate ? new Date(vendor.planEndDate).toLocaleDateString() : 'N/A'
+      });
+    });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=vendors_report_${Date.now()}.xlsx`);
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.send(buffer);
+
+  } catch (error) {
+    console.error("Export vendors error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };

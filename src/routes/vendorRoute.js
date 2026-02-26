@@ -6,10 +6,15 @@ const upload = require("../middleware/uploadMiddleware");
 
 // Public routes
 router.post("/login", vendorController.login);
+router.post("/signup", upload.single("profilePic"), vendorController.signup);
+router.post("/forgot-password", vendorController.forgotPassword);
+router.post("/reset-password", vendorController.resetPassword);
 
 // Accessible by admin and sub-admin (for now using just authMiddleware)
 router.use(authMiddleware);
 
+router.post("/change-password", vendorController.changePassword);
+router.post("/export", vendorController.exportVendors);
 router.post("/", upload.single("profilePic"), vendorController.createVendor);
 router.get("/", vendorController.getVendors);
 router.put("/:id", upload.single("profilePic"), vendorController.updateVendor);
