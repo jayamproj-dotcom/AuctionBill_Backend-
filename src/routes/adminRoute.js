@@ -7,12 +7,18 @@ const adminController = require("../controllers/adminController");
 
 //Admin Login
 router.post("/login", adminController.login);
+router.post("/forgot-password", adminController.forgotPassword);
+router.post("/reset-password", adminController.resetPassword);
+
 //Admin Profile Update
 router.put("/update-profile", authMiddleware, roleMiddleware("admin"), adminController.updateProfie);
-//Admin Password Update
+//Admin Password Update (Legacy)
 router.put("/update-password", authMiddleware, roleMiddleware("admin"), adminController.updatePassword);
+//Admin Change Password (New with current password verification)
+router.post("/change-password", authMiddleware, adminController.changePassword);
 //Admin Verify Password
 router.post("/verify-password", authMiddleware, roleMiddleware("admin"), adminController.verifyPassword);
+
 //Create Sub Admin
 router.post("/create-sub-admin", authMiddleware, roleMiddleware("admin"), adminController.createSubAdmin);
 //Get Sub Admin

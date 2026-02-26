@@ -450,3 +450,101 @@ exports.deleteSubAdmin = async (req, res) => {
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const adminId = req.user.id;
+
+    const admin = await Admin.findById(adminId);
+    if (!admin) {
+      return res.status(404).json({ status: false, message: "Admin not found" });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, admin.password);
+    if (!isMatch) {
+      return res.status(400).json({ status: false, message: "Incorrect current password" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    admin.password = hashedPassword;
+    await admin.save();
+
+    res.status(200).json({ status: true, message: "Password changed successfully" });
+  } catch (error) {
+    console.error("Change password error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const admin = await Admin.findOne({ email });
+
+    if (!admin) {
+      return res.status(404).json({ status: false, message: "Admin with this email does not exist" });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    admin.otp = otp;
+    admin.otpExpires = otpExpires;
+    await admin.save();
+
+    const emailContent = `
+<!DOCTYPE html>
+<html>
+<body style="margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, sans-serif;">
+  <div style="max-width:600px; margin:40px auto; background:#ffffff; border-radius:10px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,0.1);">
+    <div style="background:#f39c12; padding:25px; color:#ffffff; text-align:center;">
+      <h1 style="margin:0; font-size:22px;">Admin Password Reset</h1>
+    </div>
+    <div style="padding:30px; color:#333;">
+      <p>Hello ${admin.username},</p>
+      <p>You requested a password reset. Use the OTP below to reset your password. Valid for 5 minutes.</p>
+      <div style="text-align:center; margin:30px 0;">
+        <span style="font-size:32px; font-weight:bold; letter-spacing:6px; color:#f39c12; padding:12px 25px; background:#f9f9f9; border-radius:8px; border:2px dashed #f39c12; display:inline-block;">
+          ${otp}
+        </span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+    await sendEmail(email, "Admin Password Reset OTP", emailContent);
+    res.status(200).json({ status: true, message: "OTP sent to your email" });
+  } catch (error) {
+    console.error("Admin forgot password error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    const admin = await Admin.findOne({
+      email,
+      otp,
+      otpExpires: { $gt: Date.now() }
+    });
+
+    if (!admin) {
+      return res.status(400).json({ status: false, message: "Invalid or expired OTP" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    admin.password = hashedPassword;
+    admin.otp = undefined;
+    admin.otpExpires = undefined;
+    await admin.save();
+
+    res.status(200).json({ status: true, message: "Password reset successfully" });
+  } catch (error) {
+    console.error("Admin reset password error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
