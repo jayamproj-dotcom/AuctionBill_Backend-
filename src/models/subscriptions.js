@@ -44,7 +44,12 @@ const planSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    isArchived: {
+        type: Boolean,
+        default: false
+    },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
     deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
     // isDeleted: { type: Boolean, default: false },

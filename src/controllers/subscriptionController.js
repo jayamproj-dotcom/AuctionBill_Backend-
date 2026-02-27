@@ -13,7 +13,7 @@ exports.createSubscription = async (req, res) => {
 
 exports.getAllSubscriptions = async (req, res) => {
     try {
-        const subscriptions = await Subscription.find();
+        const subscriptions = await Subscription.find({ isArchived: { $ne: true } });
         res.status(200).json({ status: true, subscriptions });
     } catch (error) {
         console.error("Get all subscriptions error:", error);
@@ -34,9 +34,25 @@ exports.getSubscriptionById = async (req, res) => {
 
 exports.updateSubscription = async (req, res) => {
     try {
-        const data = { ...req.body, updatedBy: req.user?.id };
-        const subscription = await Subscription.findByIdAndUpdate(req.params.id, data, { returnDocument: 'after' });
-        if (!subscription) return res.status(404).json({ status: false, message: "Subscription not found" });
+        const oldPlanId = req.params.id;
+        const oldPlan = await Subscription.findById(oldPlanId);
+        
+        if (!oldPlan) return res.status(404).json({ status: false, message: "Subscription not found" });
+
+        // Archive old plan and change its slug to free it up
+        await Subscription.findByIdAndUpdate(oldPlanId, { 
+            isArchived: true, 
+             slug: `${oldPlan.slug}-archived-${Date.now()}` 
+        });
+
+        // Create new plan with updated data
+        const data = { 
+            ...req.body, 
+            createdBy: oldPlan.createdBy || req.user?.id,
+            updatedBy: req.user?.id 
+        };
+        const subscription = await Subscription.create(data);
+        
         res.status(200).json({ status: true, message: "Subscription updated successfully", subscription });
     } catch (error) {
         console.error("Update subscription error:", error);
