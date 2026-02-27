@@ -17,4 +17,7 @@ app.use("/api/subscription", require("./routes/subscriptions.Route"));
 //Vendor Routes
 app.use("/api/vendor", require("./routes/vendorRoute"));
 
+//Notification Routes
+app.use("/api/notification", require("./routes/notificationRoute"));
+
 module.exports = app;

@@ -5,6 +5,7 @@ const Admin = require("../models/admin");
 const bcrypt = require("bcryptjs");
 const sendEmail = require("../utils/sendEmail");
 const ExcelJS = require('exceljs');
+const Notification = require("../models/notification");
 
 exports.login = async (req, res) => {
   try {
@@ -155,6 +156,19 @@ exports.signup = async (req, res) => {
       await sendEmail(email, "Your Subscription Request Has Been Received", emailContent);
     } catch (emailErr) {
       console.error("Email error:", emailErr);
+    }
+
+    // Create Admin Notification
+    try {
+      const adminNotification = new Notification({
+        vendorId: newVendor._id,
+        title: "New Vendor Registration",
+        message: `${name} has requested for ${planExists.name} plan.`,
+        type: "new_registration"
+      });
+      await adminNotification.save();
+    } catch (notifErr) {
+      console.error("Notification error:", notifErr);
     }
 
     res.status(201).json({ status: true, message: "Subscription request submitted successfully. Please wait for admin approval.", vendor: newVendor });
