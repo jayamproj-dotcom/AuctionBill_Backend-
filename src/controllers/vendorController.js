@@ -20,6 +20,7 @@ exports.login = async (req, res) => {
     if (!isPasswordValid) {
       return res.status(401).json({ status: false, message: "Invalid email or password" });
     }
+    
 
     if (vendor.status !== "Active") {
       return res.status(403).json({ status: false, message: "Your account is not active. Please contact support." });
