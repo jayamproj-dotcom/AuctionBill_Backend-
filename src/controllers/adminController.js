@@ -44,7 +44,7 @@ exports.login = async (req, res) => {
 
 exports.updateProfie = async (req, res) => {
   try {
-    const { username, email } = req.body;
+    const { username, email, otp } = req.body;
     console.log(req.user);
     const admin = await Admin.findOne({ _id: req.user.id });
     if (!admin) return res.status(400).json({ status: false, message: "User not found" });
@@ -63,6 +63,18 @@ exports.updateProfie = async (req, res) => {
       }
     }
 
+    if (email && email !== admin.email) {
+      if (!otp) {
+        return res.status(400).json({ status: false, message: "OTP is required to change email" });
+      }
+      if (admin.otp !== otp || admin.otpExpires < Date.now()) {
+        return res.status(400).json({ status: false, message: "Invalid or expired OTP" });
+      }
+      // OTP is valid, clear it
+      admin.otp = undefined;
+      admin.otpExpires = undefined;
+    }
+
     admin.username = username;
     admin.email = email;
     await admin.save();
@@ -72,6 +84,55 @@ exports.updateProfie = async (req, res) => {
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 }
+
+exports.sendEmailUpdateOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const admin = await Admin.findById(req.user.id);
+
+    if (!admin) return res.status(404).json({ status: false, message: "User not found" });
+
+    // Check if new email is already used by another user
+    const existingUser = await Admin.findOne({ email, _id: { $ne: req.user.id } });
+    if (existingUser) return res.status(400).json({ status: false, message: "Email is already in use" });
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    admin.otp = otp;
+    admin.otpExpires = otpExpires;
+    await admin.save();
+
+    const emailContent = `
+<!DOCTYPE html>
+<html>
+<body style="margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, sans-serif;">
+  <div style="max-width:600px; margin:40px auto; background:#ffffff; border-radius:10px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,0.1);">
+    <div style="background:#f39c12; padding:25px; color:#ffffff; text-align:center;">
+      <h1 style="margin:0; font-size:22px;">Update Email Address</h1>
+    </div>
+    <div style="padding:30px; color:#333;">
+      <p>Hello ${admin.username},</p>
+      <p>You requested to update your email address. Use the OTP below to confirm the change. Valid for 5 minutes.</p>
+      <div style="text-align:center; margin:30px 0;">
+        <span style="font-size:32px; font-weight:bold; letter-spacing:6px; color:#f39c12; padding:12px 25px; background:#f9f9f9; border-radius:8px; border:2px dashed #f39c12; display:inline-block;">
+          ${otp}
+        </span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+    await sendEmail(email, "Update Email OTP", emailContent);
+    res.status(200).json({ status: true, message: "OTP sent to your new email" });
+  } catch (error) {
+    console.error("Send email update OTP error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
 
 exports.updatePassword = async (req, res) => {
   try {

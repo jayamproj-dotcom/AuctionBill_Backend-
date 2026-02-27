@@ -12,6 +12,9 @@ router.post("/reset-password", adminController.resetPassword);
 
 //Admin Profile Update
 router.put("/update-profile", authMiddleware, roleMiddleware("admin"), adminController.updateProfie);
+
+//Admin Send Email Update OTP
+router.post("/send-email-update-otp", authMiddleware, roleMiddleware("admin"), adminController.sendEmailUpdateOtp);
 //Admin Password Update (Legacy)
 router.put("/update-password", authMiddleware, roleMiddleware("admin"), adminController.updatePassword);
 //Admin Change Password (New with current password verification)
@@ -30,7 +33,7 @@ router.delete("/delete-sub-admin/:id", authMiddleware, roleMiddleware("admin"), 
 
 
 
-router.get('/admin',authMiddleware,roleMiddleware("admin"),adminController.getAdmin);
+router.get('/admin', authMiddleware, roleMiddleware("admin"), adminController.getAdmin);
 router.post('/update-password', authMiddleware, adminController.updatePassword);
 router.get('/profile', authMiddleware, adminController.getAdmin);
 router.put('/profile', authMiddleware, adminController.updateProfie);

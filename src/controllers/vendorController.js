@@ -308,7 +308,7 @@ exports.createVendor = async (req, res) => {
 
 exports.getVendors = async (req, res) => {
   try {
-    const vendors = await Vendor.find().populate("plan", "name planId");
+    const vendors = await Vendor.find().populate("plan", "name planId price");
     res.status(200).json({ status: true, vendors });
   } catch (error) {
     console.error("Get vendors error:", error);
@@ -380,6 +380,19 @@ exports.updateVendor = async (req, res) => {
     if (address) vendor.address = address;
     if (city) vendor.city = city;
     if (state) vendor.state = state;
+
+    // Recalculate start and end date if being approved today
+    if (status && status === "Active" && vendor.status === "Pending") {
+      vendor.joinedDate = new Date();
+      let newEndDate = new Date();
+      if (activePlanData && activePlanData.durationType === 'year') {
+        newEndDate.setFullYear(newEndDate.getFullYear() + (activePlanData.durationValue || 1));
+      } else if (activePlanData) {
+        newEndDate.setMonth(newEndDate.getMonth() + (activePlanData.durationValue || 1));
+      }
+      vendor.planEndDate = newEndDate;
+    }
+
     if (status) vendor.status = status;
     if (profilePic !== undefined) vendor.profilePic = profilePic;
 
@@ -695,7 +708,7 @@ exports.exportVendors = async (req, res) => {
     if (city) query.city = city;
     if (plan) query.plan = plan;
     if (status) query.status = status;
-    
+
     if (from || to) {
       query.joinedDate = {};
       if (from) query.joinedDate.$gte = new Date(from);
