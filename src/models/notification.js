@@ -1,27 +1,27 @@
- const mongoose = require("mongoose");
+const mongoose = require("mongoose");
 
 const notificationSchema = new mongoose.Schema({
-    vendorId: { 
-        type: mongoose.Schema.Types.ObjectId, 
-        ref: "Vendor", 
-        required: true 
+    vendorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Vendor",
+        required: true
     },
-    title: { 
-        type: String, 
-        required: true 
+    title: {
+        type: String,
+        required: true
     },
-    message: { 
-        type: String, 
-        required: true 
+    message: {
+        type: String,
+        required: true
     },
-    type: { 
-        type: String, 
-        enum: ["asset_upgrade", "plan_upgrade", "new_registration", "other"],
+    type: {
+        type: String,
+        enum: ["asset_upgrade", "plan_upgrade", "new_registration", "subscription_alert", "other"],
         default: "other"
     },
-    isRead: { 
-        type: Boolean, 
-        default: false 
+    isRead: {
+        type: Boolean,
+        default: false
     }
 }, { timestamps: true });
 

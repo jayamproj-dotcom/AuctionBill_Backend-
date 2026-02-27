@@ -10,6 +10,7 @@ const vendorSchema = new mongoose.Schema({
     city: { type: String },
     state: { type: String },
     plan: { type: mongoose.Schema.Types.ObjectId, ref: "Plan", required: true },
+    requestedPlan: { type: mongoose.Schema.Types.ObjectId, ref: "Plan" },
     status: { type: String, enum: ["Active", "Inactive", "Pending"], default: "Active" },
     joinedDate: { type: Date, default: Date.now },
     planEndDate: { type: Date },

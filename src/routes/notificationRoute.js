@@ -10,5 +10,6 @@ router.put("/read/:id", verifyToken, notificationController.markAsRead);
 
 // Vendor route
 router.post("/request-upgrade", verifyToken, roleCheck("vendor"), notificationController.createUpgradeRequest);
+router.get("/vendor", verifyToken, notificationController.getVendorNotifications);
 
 module.exports = router;

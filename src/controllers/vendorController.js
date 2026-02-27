@@ -20,7 +20,7 @@ exports.login = async (req, res) => {
     if (!isPasswordValid) {
       return res.status(401).json({ status: false, message: "Invalid email or password" });
     }
-    
+
 
     if (vendor.status !== "Active") {
       return res.status(403).json({ status: false, message: "Your account is not active. Please contact support." });
@@ -323,7 +323,7 @@ exports.createVendor = async (req, res) => {
 
 exports.getVendors = async (req, res) => {
   try {
-    const vendors = await Vendor.find().populate("plan", "name planId price");
+    const vendors = await Vendor.find().populate("plan", "name planId price").populate("requestedPlan", "name planId price");
     res.status(200).json({ status: true, vendors });
   } catch (error) {
     console.error("Get vendors error:", error);
@@ -334,7 +334,7 @@ exports.getVendors = async (req, res) => {
 exports.updateVendor = async (req, res) => {
   try {
     const { id } = req.params;
-    let { name, email, phone, address, city, state, plan, status, profilePic } = req.body;
+    let { name, email, phone, address, city, state, plan, status, profilePic, requestedPlan } = req.body;
 
     if (req.file) {
       profilePic = `/uploads/vendors/${req.file.filename}`;
@@ -387,7 +387,32 @@ exports.updateVendor = async (req, res) => {
       (city && vendor.city !== city) ||
       (state && vendor.state !== state) ||
       (status && vendor.status !== status) ||
-      (profilePic !== undefined && vendor.profilePic !== profilePic);
+      (profilePic !== undefined && vendor.profilePic !== profilePic) ||
+      (requestedPlan !== undefined && String(vendor.requestedPlan) !== String(requestedPlan));
+
+    if (requestedPlan !== undefined) {
+      if (requestedPlan === null || requestedPlan === "") {
+        vendor.requestedPlan = null;
+      } else {
+        const reqPlanExists = await Plan.findById(requestedPlan);
+        if (!reqPlanExists) {
+          return res.status(400).json({ status: false, message: "Invalid requested subscription plan." });
+        }
+        vendor.requestedPlan = requestedPlan;
+
+        try {
+          const adminNotification = new Notification({
+            vendorId: vendor._id,
+            title: "Plan Upgrade Request",
+            message: `${vendor.name} has requested an upgrade to ${reqPlanExists.name} plan.`,
+            type: "plan_upgrade"
+          });
+          await adminNotification.save();
+        } catch (notifErr) {
+          console.error("Notification error:", notifErr);
+        }
+      }
+    }
 
     if (name) vendor.name = name;
     if (email) vendor.email = email;

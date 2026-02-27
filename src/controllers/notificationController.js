@@ -1,4 +1,5 @@
 const Notification = require("../models/notification");
+const Vendor = require("../models/vendor");
 
 exports.getNotifications = async (req, res) => {
     try {
@@ -9,6 +10,74 @@ exports.getNotifications = async (req, res) => {
         res.status(200).json({ status: true, notifications });
     } catch (error) {
         console.error("Get notifications error:", error);
+        res.status(500).json({ status: false, message: "Internal server error" });
+    }
+};
+
+exports.getVendorNotifications = async (req, res) => {
+    try {
+        const vendorId = req.user.id;
+
+        const vendor = await Vendor.findById(vendorId);
+
+        if (vendor && vendor.planEndDate) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const expiryDate = new Date(vendor.planEndDate);
+            expiryDate.setHours(0, 0, 0, 0);
+
+            const diffTime = expiryDate.getTime() - today.getTime();
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays <= 5 && diffDays > 0) {
+                const title = `Subscription Ends in ${diffDays} Day${diffDays > 1 ? 's' : ''}`;
+
+                const existingWarning = await Notification.findOne({
+                    vendorId,
+                    type: "subscription_alert",
+                    title: title
+                });
+
+                if (!existingWarning) {
+                    await new Notification({
+                        vendorId,
+                        title,
+                        message: `Your active plan will expire in ${diffDays} day${diffDays > 1 ? 's' : ''}. Please renew to avoid account suspension.`,
+                        type: "subscription_alert"
+                    }).save();
+                }
+            } else if (diffDays <= 0) {
+                const title = 'Subscription Expired';
+                const existingExpired = await Notification.findOne({
+                    vendorId,
+                    type: "subscription_alert",
+                    title: title
+                });
+
+                if (!existingExpired) {
+                    await new Notification({
+                        vendorId,
+                        title,
+                        message: 'Your subscription has ended. Please renew immediately to continue using the services.',
+                        type: "subscription_alert"
+                    }).save();
+                }
+            } else {
+                // Clear any subscription alerts if the plan has been renewed (diffDays > 5)
+                await Notification.deleteMany({
+                    vendorId,
+                    type: "subscription_alert"
+                });
+            }
+        }
+
+        const notifications = await Notification.find({ vendorId, isRead: false })
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({ status: true, notifications });
+    } catch (error) {
+        console.error("Get vendor notifications error:", error);
         res.status(500).json({ status: false, message: "Internal server error" });
     }
 };
