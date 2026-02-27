@@ -34,26 +34,27 @@ exports.getSubscriptionById = async (req, res) => {
 
 exports.updateSubscription = async (req, res) => {
     try {
-        const oldPlanId = req.params.id;
-        const oldPlan = await Subscription.findById(oldPlanId);
-        
-        if (!oldPlan) return res.status(404).json({ status: false, message: "Subscription not found" });
+        const { id } = req.params;
+        const data = { ...req.body, updatedBy: req.user?.id };
 
-        // Archive old plan and change its slug to free it up
-        await Subscription.findByIdAndUpdate(oldPlanId, { 
-            isArchived: true, 
-             slug: `${oldPlan.slug}-archived-${Date.now()}` 
+        const updated = await Subscription.findByIdAndUpdate(
+            id,
+            data,
+            { new: true }
+        );
+
+        if (!updated) {
+            return res.status(404).json({
+                status: false,
+                message: "Subscription not found"
+            });
+        }
+
+        res.status(200).json({
+            status: true,
+            message: "Subscription updated successfully",
+            subscription: updated
         });
-
-        // Create new plan with updated data
-        const data = { 
-            ...req.body, 
-            createdBy: oldPlan.createdBy || req.user?.id,
-            updatedBy: req.user?.id 
-        };
-        const subscription = await Subscription.create(data);
-        
-        res.status(200).json({ status: true, message: "Subscription updated successfully", subscription });
     } catch (error) {
         console.error("Update subscription error:", error);
         res.status(500).json({ status: false, message: error.message || "Internal server error" });
@@ -62,10 +63,15 @@ exports.updateSubscription = async (req, res) => {
 
 exports.deleteSubscription = async (req, res) => {
     try {
-        const subscription = await Subscription.findByIdAndDelete(req.params.id);
+        const subscription = await Subscription.findByIdAndUpdate(
+            req.params.id, 
+            { isArchived: true, updatedBy: req.user?.id },
+            { new: true }
+        );
+        
         if (!subscription) return res.status(404).json({ status: false, message: "Subscription not found" });
 
-        res.status(200).json({ status: true, message: "Subscription deleted successfully", subscription });
+        res.status(200).json({ status: true, message: "Subscription archived successfully", subscription });
     } catch (error) {
         console.error("Delete subscription error:", error);
         res.status(500).json({ status: false, message: error.message || "Internal server error" });
