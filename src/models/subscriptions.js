@@ -31,11 +31,9 @@ const planSchema = new mongoose.Schema({
         type: String,
         default: 'Active'
     },
-    features: [
-        {
-            type: String
-        }
-    ],
+    features: [{
+        type: String
+    }],
     description: {
         type: String,
         default: ''

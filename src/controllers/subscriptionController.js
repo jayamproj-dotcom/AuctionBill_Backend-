@@ -3,6 +3,18 @@ const Subscription = require("../models/subscriptions");
 exports.createSubscription = async (req, res) => {
     try {
         const data = { ...req.body, createdBy: req.user?.id, updatedBy: req.user?.id };
+        
+        // Ensure slug uniqueness
+        if (data.slug) {
+            let uniqueSlug = data.slug;
+            let counter = 1;
+            while (await Subscription.exists({ slug: uniqueSlug })) {
+                uniqueSlug = `${data.slug}-${counter}`;
+                counter++;
+            }
+            data.slug = uniqueSlug;
+        }
+
         const subscription = await Subscription.create(data);
         res.status(201).json({ status: true, message: "Subscription created successfully", subscription });
     } catch (error) {

@@ -6,6 +6,8 @@ const bcrypt = require("bcryptjs");
 const sendEmail = require("../utils/sendEmail");
 const ExcelJS = require('exceljs');
 const Notification = require("../models/notification");
+const UserSubscription = require("../models/userSubscription");
+
 
 exports.login = async (req, res) => {
   try {
@@ -35,13 +37,19 @@ exports.login = async (req, res) => {
     const vendorData = vendor.toObject();
     delete vendorData.password;
 
+    const activeSubscription = await UserSubscription.findOne({ 
+      userId: vendor._id, 
+      endDate: { $gte: new Date() } 
+    }).sort({ createdAt: -1 });
+
     res.status(200).json({
       status: true,
       message: "Login successful",
       token,
       user: {
         ...vendorData,
-        role: "vendor"
+        role: "vendor",
+        activeSubscription
       }
     });
   } catch (error) {
@@ -232,6 +240,17 @@ exports.createVendor = async (req, res) => {
 
     await newVendor.save();
 
+    if (newVendor.status === "Active") {
+      await UserSubscription.create({
+        userId: newVendor._id,
+        subscriptionId: planExists._id,
+        priceAtPurchase: planExists.price,
+        featuresAtPurchase: planExists.features || {},
+        startDate: new Date(),
+        endDate: planEndDate
+      });
+    }
+
     // Send Email to Vendor
     const planName = planExists.name || "Default Plan";
     const planPrice = planExists.price !== undefined ? `$${planExists.price}` : "N/A";
@@ -323,8 +342,23 @@ exports.createVendor = async (req, res) => {
 
 exports.getVendors = async (req, res) => {
   try {
-    const vendors = await Vendor.find().populate("plan", "name planId price").populate("requestedPlan", "name planId price");
-    res.status(200).json({ status: true, vendors });
+    const vendors = await Vendor.find().populate("plan", "name planId price durationType durationValue").populate("requestedPlan", "name planId price");
+    const vendorIds = vendors.map(v => v._id);
+    
+    // Fetch active subscriptions for these vendors
+    const activeSubscriptions = await UserSubscription.find({
+        userId: { $in: vendorIds }
+    }).sort({ createdAt: -1 });
+
+    const vendorsWithSub = vendors.map(vendor => {
+        const sub = activeSubscriptions.find(s => s.userId.toString() === vendor._id.toString());
+        return {
+            ...vendor.toObject(),
+            activeSubscription: sub || null
+        };
+    });
+
+    res.status(200).json({ status: true, vendors: vendorsWithSub });
   } catch (error) {
     console.error("Get vendors error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -421,8 +455,10 @@ exports.updateVendor = async (req, res) => {
     if (city) vendor.city = city;
     if (state) vendor.state = state;
 
+    const wasPendingAndNowActive = (status && status === "Active" && vendor.status === "Pending");
+
     // Recalculate start and end date if being approved today
-    if (status && status === "Active" && vendor.status === "Pending") {
+    if (wasPendingAndNowActive) {
       vendor.joinedDate = new Date();
       let newEndDate = new Date();
       if (activePlanData && activePlanData.durationType === 'year') {
@@ -438,6 +474,19 @@ exports.updateVendor = async (req, res) => {
 
     vendor.updatedBy = req.user?.id;
     await vendor.save();
+
+    if (vendor.status === "Active" && (wasPendingAndNowActive || plan)) {
+      if (activePlanData) {
+        await UserSubscription.create({
+          userId: vendor._id,
+          subscriptionId: activePlanData._id,
+          priceAtPurchase: activePlanData.price,
+          featuresAtPurchase: activePlanData.features || {},
+          startDate: wasPendingAndNowActive ? vendor.joinedDate : new Date(),
+          endDate: vendor.planEndDate
+        });
+      }
+    }
 
     if (isProfileChanged || plan) {
       const planName = activePlanData ? activePlanData.name : "Default Plan";
