@@ -11,6 +11,7 @@ const vendorSchema = new mongoose.Schema({
     state: { type: String },
     plan: { type: mongoose.Schema.Types.ObjectId, ref: "Plan", required: true },
     requestedPlan: { type: mongoose.Schema.Types.ObjectId, ref: "Plan" },
+    upgradeType: { type: String, enum: ['from_today', 'after_current'] },
     status: { type: String, enum: ["Active", "Inactive", "Pending"], default: "Active" },
     joinedDate: { type: Date, default: Date.now },
     planEndDate: { type: Date },

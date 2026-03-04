@@ -37,9 +37,9 @@ exports.login = async (req, res) => {
     const vendorData = vendor.toObject();
     delete vendorData.password;
 
-    const activeSubscription = await UserSubscription.findOne({ 
-      userId: vendor._id, 
-      endDate: { $gte: new Date() } 
+    const activeSubscription = await UserSubscription.findOne({
+      userId: vendor._id,
+      endDate: { $gte: new Date() }
     }).sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -84,7 +84,7 @@ exports.signup = async (req, res) => {
     if (planExists.durationType === "year") {
       planEndDate.setFullYear(planEndDate.getFullYear() + (planExists.durationValue || 1));
     } else {
-      planEndDate.setMonth(planEndDate.getMonth() + (planExists.durationValue || 1));
+      planEndDate.setDate(planEndDate.getDate() + (30 * (planExists.durationValue || 1)));
     }
 
     const newVendor = new Vendor({
@@ -219,7 +219,7 @@ exports.createVendor = async (req, res) => {
     if (planExists.durationType === "year") {
       planEndDate.setFullYear(planEndDate.getFullYear() + (planExists.durationValue || 1));
     } else {
-      planEndDate.setMonth(planEndDate.getMonth() + (planExists.durationValue || 1));
+      planEndDate.setDate(planEndDate.getDate() + (30 * (planExists.durationValue || 1)));
     }
 
     const newVendor = new Vendor({
@@ -254,7 +254,7 @@ exports.createVendor = async (req, res) => {
     // Send Email to Vendor
     const planName = planExists.name || "Default Plan";
     const planPrice = planExists.price !== undefined ? `$${planExists.price}` : "N/A";
-    const planDuration = `${planExists.durationValue || 1} ${planExists.durationType || 'month'}(s)`;
+    const planDuration = `${planExists.durationValue || 1} ${planExists.durationType === 'year' ? 'year' : 'Month (30 Days)'}(s)`;
 
     const emailContent = `
   <!DOCTYPE html>
@@ -344,18 +344,18 @@ exports.getVendors = async (req, res) => {
   try {
     const vendors = await Vendor.find().populate("plan", "name planId price durationType durationValue").populate("requestedPlan", "name planId price");
     const vendorIds = vendors.map(v => v._id);
-    
+
     // Fetch active subscriptions for these vendors
     const activeSubscriptions = await UserSubscription.find({
-        userId: { $in: vendorIds }
+      userId: { $in: vendorIds }
     }).sort({ createdAt: -1 });
 
     const vendorsWithSub = vendors.map(vendor => {
-        const sub = activeSubscriptions.find(s => s.userId.toString() === vendor._id.toString());
-        return {
-            ...vendor.toObject(),
-            activeSubscription: sub || null
-        };
+      const sub = activeSubscriptions.find(s => s.userId.toString() === vendor._id.toString());
+      return {
+        ...vendor.toObject(),
+        activeSubscription: sub || null
+      };
     });
 
     res.status(200).json({ status: true, vendors: vendorsWithSub });
@@ -365,10 +365,94 @@ exports.getVendors = async (req, res) => {
   }
 };
 
+exports.getVendorById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const vendor = await Vendor.findById(id).populate("plan", "name planId price durationType durationValue");
+    if (!vendor) {
+      return res.status(404).json({ status: false, message: "Vendor not found" });
+    }
+
+    const activeSubscription = await UserSubscription.findOne({
+      userId: id,
+      endDate: { $gte: new Date() }
+    }).sort({ createdAt: -1 });
+
+    res.status(200).json({
+      status: true,
+      vendor: {
+        ...vendor.toObject(),
+        activeSubscription: activeSubscription || null
+      }
+    });
+  } catch (error) {
+    console.error("Get vendor by id error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.getAllPurchases = async (req, res) => {
+  try {
+    const purchases = await UserSubscription.find()
+      .populate("userId", "name status")
+      .populate("subscriptionId", "name")
+      .sort({ createdAt: -1 });
+
+    const formattedPurchases = purchases.map(sub => {
+      const currentDate = new Date();
+      const isExpired = new Date(sub.endDate) < currentDate;
+      const currentSubStatus = isExpired ? 'Expired' : (sub.userId?.status || 'Active');
+
+      return {
+        id: sub._id,
+        vendorId: sub.userId?._id,
+        vendorName: sub.userId?.name || 'Unknown Vendor',
+        plan: sub.subscriptionId?.name || 'Unknown Plan',
+        price: sub.priceAtPurchase || 0,
+        status: currentSubStatus,
+        paymentStatus: 'Paid',
+        startDate: sub.startDate,
+        expiryDate: sub.endDate,
+        transactionId: `TXN_${sub._id.toString().slice(-6).toUpperCase()}`
+      };
+    });
+
+    res.status(200).json({ status: true, purchases: formattedPurchases });
+  } catch (error) {
+    console.error("Get all purchases error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.getVendorPurchasesById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const purchases = await UserSubscription.find({ userId: id })
+      .populate("subscriptionId", "name durationType durationValue features")
+      .sort({ createdAt: -1 });
+
+    const formattedPurchases = purchases.map(sub => {
+      let durationStr = sub.subscriptionId?.durationType === "year" ? "Yearly" : "30 Days";
+      return {
+        id: `INV-${new Date(sub.createdAt).getFullYear()}-${sub._id.toString().slice(-4).toUpperCase()}`,
+        date: sub.createdAt,
+        amount: sub.priceAtPurchase || 0,
+        status: "Paid",
+        description: `${sub.subscriptionId?.name || "Plan"} - ${durationStr}`
+      };
+    });
+
+    res.status(200).json({ status: true, purchases: formattedPurchases });
+  } catch (error) {
+    console.error("Get vendor purchases by id error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
 exports.updateVendor = async (req, res) => {
   try {
     const { id } = req.params;
-    let { name, email, phone, address, city, state, plan, status, profilePic, requestedPlan } = req.body;
+    let { name, email, phone, address, city, state, plan, status, profilePic, requestedPlan, upgradeType } = req.body;
 
     if (req.file) {
       profilePic = `/uploads/vendors/${req.file.filename}`;
@@ -394,6 +478,8 @@ exports.updateVendor = async (req, res) => {
     }
 
     let activePlanData = null;
+    let oldPlanEndDate = vendor.planEndDate ? new Date(vendor.planEndDate) : new Date();
+
     if (plan) {
       const planExists = await Plan.findById(plan);
       if (!planExists) {
@@ -403,12 +489,18 @@ exports.updateVendor = async (req, res) => {
       activePlanData = planExists;
 
       let planEndDate = new Date();
+      if (vendor.upgradeType === 'after_current' && vendor.planEndDate && new Date(vendor.planEndDate) > new Date()) {
+        planEndDate = new Date(vendor.planEndDate);
+      }
+
       if (planExists.durationType === 'year') {
         planEndDate.setFullYear(planEndDate.getFullYear() + (planExists.durationValue || 1));
       } else {
-        planEndDate.setMonth(planEndDate.getMonth() + (planExists.durationValue || 1));
+        planEndDate.setDate(planEndDate.getDate() + (30 * (planExists.durationValue || 1)));
       }
       vendor.planEndDate = planEndDate;
+      vendor.requestedPlan = null;
+      vendor.upgradeType = null;
     } else {
       // Also fetch to get current active Plan context for email even if not updated during this call
       activePlanData = await Plan.findById(vendor.plan);
@@ -427,12 +519,16 @@ exports.updateVendor = async (req, res) => {
     if (requestedPlan !== undefined) {
       if (requestedPlan === null || requestedPlan === "") {
         vendor.requestedPlan = null;
+        vendor.upgradeType = null;
       } else {
         const reqPlanExists = await Plan.findById(requestedPlan);
         if (!reqPlanExists) {
           return res.status(400).json({ status: false, message: "Invalid requested subscription plan." });
         }
         vendor.requestedPlan = requestedPlan;
+        if (upgradeType) {
+          vendor.upgradeType = upgradeType;
+        }
 
         try {
           const adminNotification = new Notification({
@@ -464,7 +560,7 @@ exports.updateVendor = async (req, res) => {
       if (activePlanData && activePlanData.durationType === 'year') {
         newEndDate.setFullYear(newEndDate.getFullYear() + (activePlanData.durationValue || 1));
       } else if (activePlanData) {
-        newEndDate.setMonth(newEndDate.getMonth() + (activePlanData.durationValue || 1));
+        newEndDate.setDate(newEndDate.getDate() + (30 * (activePlanData.durationValue || 1)));
       }
       vendor.planEndDate = newEndDate;
     }
@@ -477,12 +573,19 @@ exports.updateVendor = async (req, res) => {
 
     if (vendor.status === "Active" && (wasPendingAndNowActive || plan)) {
       if (activePlanData) {
+        let subStartDate = new Date();
+        if (wasPendingAndNowActive) {
+          subStartDate = vendor.joinedDate;
+        } else if (vendor.upgradeType === 'after_current') {
+          subStartDate = oldPlanEndDate;
+        }
+
         await UserSubscription.create({
           userId: vendor._id,
           subscriptionId: activePlanData._id,
           priceAtPurchase: activePlanData.price,
           featuresAtPurchase: activePlanData.features || {},
-          startDate: wasPendingAndNowActive ? vendor.joinedDate : new Date(),
+          startDate: subStartDate,
           endDate: vendor.planEndDate
         });
       }
@@ -491,7 +594,7 @@ exports.updateVendor = async (req, res) => {
     if (isProfileChanged || plan) {
       const planName = activePlanData ? activePlanData.name : "Default Plan";
       const planPrice = activePlanData && activePlanData.price !== undefined ? `$${activePlanData.price}` : "N/A";
-      const planDuration = activePlanData ? `${activePlanData.durationValue || 1} ${activePlanData.durationType || 'month'}(s)` : "N/A";
+      const planDuration = activePlanData ? `${activePlanData.durationValue || 1} ${activePlanData.durationType === 'year' ? 'year' : 'Month (30 Days)'}(s)` : "N/A";
 
       const updateEmailContent = `
    <!DOCTYPE html>

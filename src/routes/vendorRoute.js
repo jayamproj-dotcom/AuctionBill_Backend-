@@ -17,6 +17,9 @@ router.post("/change-password", vendorController.changePassword);
 router.post("/export", vendorController.exportVendors);
 router.post("/", upload.single("profilePic"), vendorController.createVendor);
 router.get("/", vendorController.getVendors);
+router.get("/purchases", vendorController.getAllPurchases);
+router.get("/:id", vendorController.getVendorById);
+router.get("/:id/purchases", vendorController.getVendorPurchasesById);
 router.put("/:id", upload.single("profilePic"), vendorController.updateVendor);
 router.delete("/:id", vendorController.deleteVendor);
 
