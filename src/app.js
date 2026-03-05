@@ -20,4 +20,7 @@ app.use("/api/vendor", require("./routes/vendorRoute"));
 //Notification Routes
 app.use("/api/notification", require("./routes/notificationRoute"));
 
+//Product Routes
+app.use("/api/product", require("./routes/productRoute"));
+
 module.exports = app;
