@@ -23,4 +23,7 @@ app.use("/api/notification", require("./routes/notificationRoute"));
 //Product Routes
 app.use("/api/product", require("./routes/productRoute"));
 
+//Commission Routes
+app.use("/api/commission", require("./routes/commissionRoute"));
+
 module.exports = app;
