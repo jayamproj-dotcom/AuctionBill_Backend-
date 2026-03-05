@@ -771,6 +771,10 @@ exports.forgotPassword = async (req, res) => {
       return res.status(404).json({ status: false, message: "Vendor with this email does not exist" });
     }
 
+    if (vendor.status !== "Active") {
+      return res.status(403).json({ status: false, message: "Your account is inactive. Please contact the Admin." });
+    }
+
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpires = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes

@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const Admin = require("../models/admin");
 const sendEmail = require("../utils/sendEmail");
 
@@ -186,7 +187,7 @@ exports.verifyPassword = async (req, res) => {
 //sub admin
 exports.createSubAdmin = async (req, res) => {
   try {
-    let { username, password, email, status, name } = req.body;
+    let { username, email, status, name } = req.body;
     username = username || name;
 
     if (!username) return res.status(400).json({ status: false, message: "Username is required" });
@@ -196,6 +197,8 @@ exports.createSubAdmin = async (req, res) => {
 
     const adminEmailExists = await Admin.findOne({ email });
     if (adminEmailExists) return res.status(400).json({ status: false, message: "Email is already in use" });
+    
+    const password = crypto.randomBytes(4).toString('hex');
     const hashed = await bcrypt.hash(password, 10);
     const newAdmin = new Admin({
       username,
@@ -544,6 +547,10 @@ exports.forgotPassword = async (req, res) => {
 
     if (!admin) {
       return res.status(404).json({ status: false, message: "Admin with this email does not exist" });
+    }
+
+    if (admin.role === "sub-admin" && admin.status !== "Active") {
+      return res.status(403).json({ status: false, message: "Account is inactive. Please contact the Admin." });
     }
 
     // Generate 6-digit OTP

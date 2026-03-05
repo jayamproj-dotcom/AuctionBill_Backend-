@@ -16,11 +16,11 @@ router.put("/update-profile", authMiddleware, roleMiddleware("admin"), adminCont
 //Admin Send Email Update OTP
 router.post("/send-email-update-otp", authMiddleware, roleMiddleware("admin"), adminController.sendEmailUpdateOtp);
 //Admin Password Update (Legacy)
-router.put("/update-password", authMiddleware, roleMiddleware("admin"), adminController.updatePassword);
+router.put("/update-password", authMiddleware, adminController.updatePassword);
 //Admin Change Password (New with current password verification)
 router.post("/change-password", authMiddleware, adminController.changePassword);
 //Admin Verify Password
-router.post("/verify-password", authMiddleware, roleMiddleware("admin"), adminController.verifyPassword);
+router.post("/verify-password", authMiddleware, adminController.verifyPassword);
 
 //Create Sub Admin
 router.post("/create-sub-admin", authMiddleware, roleMiddleware("admin"), adminController.createSubAdmin);
