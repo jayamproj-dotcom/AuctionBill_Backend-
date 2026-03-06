@@ -1,19 +1,27 @@
+const mongoose = require("mongoose");
 const AuctionProduct = require("../models/auctionProduct");
 const Transaction = require("../models/transaction");
 const BuyerPayment = require("../models/buyerPayment");
 
 // ── AUCTION PRODUCTS ──────────────────────────────────────────────────
 
-// Get auction products by vendor and date
+// Get auction products by vendor and optional filters (date, sellerId)
 exports.getAuctionProducts = async (req, res) => {
     try {
         const { vendorId } = req.params;
-        const { date } = req.query; // Expecting YYYY-MM-DD
+        const { date, sellerId } = req.query;
 
-        const query = { vendorId };
-        if (date) query.date = date;
+        if (!mongoose.Types.ObjectId.isValid(vendorId)) {
+            return res.status(400).json({ success: false, message: "Invalid Vendor ID" });
+        }
 
-        const products = await AuctionProduct.find(query).sort({ createdAt: -1 });
+        const query = { vendorId: new mongoose.Types.ObjectId(vendorId) };
+        if (date)     query.date     = date;
+        if (sellerId && mongoose.Types.ObjectId.isValid(sellerId)) {
+            query.sellerId = new mongoose.Types.ObjectId(sellerId);
+        }
+
+        const products = await AuctionProduct.find(query).sort({ date: -1, createdAt: -1 });
         res.status(200).json({ success: true, data: products });
     } catch (error) {
         res.status(500).json({ success: false, message: "Server Error", error: error.message });
@@ -145,10 +153,15 @@ exports.recordSale = async (req, res) => {
 exports.getTransactions = async (req, res) => {
     try {
         const { vendorId } = req.params;
-        const { buyerId, date } = req.query;
+        const { buyerId, sellerId, date } = req.query;
 
-        const query = { vendorId };
-        if (buyerId) query.buyerId = buyerId;
+        const query = { vendorId: new mongoose.Types.ObjectId(vendorId) };
+        if (buyerId && mongoose.Types.ObjectId.isValid(buyerId)) {
+            query.buyerId = new mongoose.Types.ObjectId(buyerId);
+        }
+        if (sellerId && mongoose.Types.ObjectId.isValid(sellerId)) {
+            query.sellerId = new mongoose.Types.ObjectId(sellerId);
+        }
         if (date) query.date = date;
 
         const transactions = await Transaction.find(query).sort({ date: -1, createdAt: -1 });

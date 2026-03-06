@@ -15,6 +15,10 @@ router.get("/list/:vendorId", roleMiddleware("admin", "vendor"), sellerControlle
 // Get a single seller
 router.get("/:sellerId", roleMiddleware("admin", "vendor"), sellerController.getSellerById);
 
+// Get seller summary (profile, products, ledger, balance)
+router.get("/summary/:sellerId", roleMiddleware("admin", "vendor"), sellerController.getSellerSummary);
+
+
 // Add a new seller
 router.post("/add", roleMiddleware("admin", "vendor"), sellerController.createSeller);
 
