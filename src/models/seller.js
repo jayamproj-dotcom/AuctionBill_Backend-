@@ -14,7 +14,7 @@ const sellerSchema = new mongoose.Schema(
         city: { type: String, trim: true, default: "" },
         address: { type: String, trim: true, default: "" },
         status: { type: String, enum: ["active", "inactive"], default: "active" },
-        password: { type: String, default: "123" },
+        
     },
     { timestamps: true }
 );
