@@ -26,4 +26,7 @@ app.use("/api/product", require("./routes/productRoute"));
 //Commission Routes
 app.use("/api/commission", require("./routes/commissionRoute"));
 
+//Seller Routes
+app.use("/api/seller", require("./routes/sellerRoute"));
+
 module.exports = app;
