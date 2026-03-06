@@ -20,6 +20,24 @@ exports.getAuctionProducts = async (req, res) => {
     }
 };
 
+// Get pending auction products by vendor and date
+exports.getPendingProducts = async (req, res) => {
+    try {
+        const { vendorId } = req.params;
+        const { beforeDate } = req.query; // Expecting YYYY-MM-DD
+
+        const query = { vendorId, isActive: true, status: { $ne: 'soldout' } };
+        if (beforeDate) {
+            query.date = { $lt: beforeDate };
+        }
+
+        const products = await AuctionProduct.find(query).sort({ date: -1, createdAt: -1 });
+        res.status(200).json({ success: true, data: products });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Server Error", error: error.message });
+    }
+};
+
 // Add new auction product
 exports.addAuctionProduct = async (req, res) => {
     try {
@@ -47,7 +65,7 @@ exports.updateAuctionProduct = async (req, res) => {
     try {
         const { id } = req.params;
         const updatedProduct = await AuctionProduct.findByIdAndUpdate(id, req.body, { new: true });
-        
+
         if (!updatedProduct) {
             return res.status(404).json({ success: false, message: "Product not found" });
         }
@@ -90,9 +108,9 @@ exports.toggleProductStatus = async (req, res) => {
 // Record a sale (Transaction)
 exports.recordSale = async (req, res) => {
     try {
-        const { 
-            vendorId, sellerId, buyerId, productId, variantId, 
-            date, quantity, rate, finalAmount, commissionPercent, 
+        const {
+            vendorId, sellerId, buyerId, productId, variantId,
+            date, quantity, rate, finalAmount, commissionPercent,
             commissionAmount, netAmount, paymentStatus, amountPaid
         } = req.body;
 
