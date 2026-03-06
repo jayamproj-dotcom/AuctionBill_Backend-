@@ -29,4 +29,7 @@ app.use("/api/commission", require("./routes/commissionRoute"));
 //Seller Routes
 app.use("/api/seller", require("./routes/sellerRoute"));
 
+//Auction Routes
+app.use("/api/auction", require("./routes/auctionRoute"));
+
 module.exports = app;
