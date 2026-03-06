@@ -17,21 +17,25 @@ const transactionSchema = new mongoose.Schema(
             ref: "Buyer",
             required: true,
         },
+          productId: {
+            type: String,   // local product id (localStorage-based product)
+            default: null,
+        },
         
         variantId: { type: String, required: true }, // Sub-doc ID of variants array
         date: { type: String, required: true }, // Store as YYYY-MM-DD
         quantity: { type: Number, required: true },
-   
+        rate: { type: Number, required: true },
         finalAmount: { type: Number, required: true },
-     
-
-      
+        commissionPercent: { type: Number, default: 0 },
+        commissionAmount: { type: Number, default: 0 },
+        netAmount: { type: Number, required: true },
         paymentStatus: {
             type: String,
             enum: ["Paid", "Part Paid", "Pending"],
             default: "Pending",
         },
-       
+        amountPaid: { type: Number, default: 0 },
     },
     { timestamps: true }
 );
