@@ -4,6 +4,10 @@ exports.addProduct = async (req, res) => {
     try {
         const { name, varieties, units, vendorId } = req.body;
         
+        if (!vendorId) {
+            return res.status(400).json({ message: "Vendor ID is required" });
+        }
+
         if (!name) {
             return res.status(400).json({ message: "Product name is required" });
         }
@@ -38,10 +42,16 @@ exports.getProducts = async (req, res) => {
 exports.deleteProduct = async (req, res) => {
     try {
         const { id } = req.params;
-        const deletedProduct = await Product.findByIdAndDelete(id);
+        const { vendorId } = req.query;
+
+        if (!vendorId) {
+            return res.status(400).json({ message: "Vendor ID is required" });
+        }
+
+        const deletedProduct = await Product.findOneAndDelete({ _id: id, vendorId });
         
         if (!deletedProduct) {
-            return res.status(404).json({ message: "Product not found" });
+            return res.status(404).json({ message: "Product not found or unauthorized" });
         }
 
         res.status(200).json({ message: "Product deleted successfully" });
@@ -54,16 +64,20 @@ exports.deleteProduct = async (req, res) => {
 exports.updateProduct = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, varieties, units } = req.body;
+        const { name, varieties, units, vendorId } = req.body;
 
-        const updatedProduct = await Product.findByIdAndUpdate(
-            id,
+        if (!vendorId) {
+            return res.status(400).json({ message: "Vendor ID is required" });
+        }
+
+        const updatedProduct = await Product.findOneAndUpdate(
+            { _id: id, vendorId },
             { name, varieties, units },
             { new: true }
         );
 
         if (!updatedProduct) {
-            return res.status(404).json({ message: "Product not found" });
+            return res.status(404).json({ message: "Product not found or unauthorized" });
         }
 
         res.status(200).json({ message: "Product updated successfully", product: updatedProduct });
