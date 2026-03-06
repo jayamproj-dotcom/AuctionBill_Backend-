@@ -12,6 +12,9 @@ router.use(authMiddleware);
 // Get all buyers for a vendor
 router.get("/list/:vendorId", roleMiddleware("admin", "vendor"), buyerController.getBuyers);
 
+// Get comprehensive summary for a single buyer
+router.get("/summary/:buyerId", roleMiddleware("admin", "vendor"), buyerController.getBuyerSummary);
+
 // Get a single buyer
 router.get("/:buyerId", roleMiddleware("admin", "vendor"), buyerController.getBuyerById);
 

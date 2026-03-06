@@ -1,9 +1,12 @@
+const mongoose = require("mongoose");
 const Buyer = require("../models/buyer");
 const BuyerPayment = require("../models/buyerPayment");
+const Transaction = require("../models/transaction");
+const AuctionProduct = require("../models/auctionProduct");
 
 // ──────────────────────────────────────────────
 //  GET /api/buyer/list/:vendorId
-//  Get all buyers for a vendor
+//  Get all buyers for a vendor with account stats
 // ──────────────────────────────────────────────
 exports.getBuyers = async (req, res) => {
     try {
@@ -13,8 +16,119 @@ exports.getBuyers = async (req, res) => {
             return res.status(403).json({ success: false, message: "Unauthorized access" });
         }
 
-        const buyers = await Buyer.find({ vendorId }).sort({ name: 1 });
-        res.status(200).json({ success: true, data: buyers });
+        if (!mongoose.Types.ObjectId.isValid(vendorId)) {
+            return res.status(400).json({ success: false, message: "Invalid Vendor ID" });
+        }
+
+        const oid = new mongoose.Types.ObjectId(vendorId);
+        const buyers = await Buyer.find({ vendorId: oid }).sort({ name: 1 });
+
+        // Augment with summary stats
+        const enrichedBuyers = await Promise.all(buyers.map(async (b) => {
+            const bid = b._id;
+            
+            // Transactions (Purchases by this buyer)
+            const txns = await Transaction.find({ buyerId: bid });
+            const totalPurchases = txns.reduce((sum, t) => sum + (Number(t.finalAmount) || 0), 0);
+
+            // Payments (Money received from this buyer)
+            const pmts = await BuyerPayment.find({ buyerId: bid });
+            const totalPaid = pmts.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+            return {
+                ...b.toObject(),
+                id: bid.toString(),
+                totalPurchases,
+                totalPaid,
+                balance: totalPurchases - totalPaid
+            };
+        }));
+
+        res.status(200).json({ success: true, data: enrichedBuyers });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Server Error", error: error.message });
+    }
+};
+
+// ──────────────────────────────────────────────
+//  GET /api/buyer/summary/:buyerId
+//  Get comprehensive summary for a single buyer
+// ──────────────────────────────────────────────
+exports.getBuyerSummary = async (req, res) => {
+    try {
+        const { buyerId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(buyerId)) {
+            return res.status(400).json({ success: false, message: "Invalid Buyer ID" });
+        }
+        const bid = new mongoose.Types.ObjectId(buyerId);
+
+        const buyer = await Buyer.findById(bid);
+        if (!buyer) return res.status(404).json({ success: false, message: "Buyer not found" });
+
+        if (req.user.role === "vendor" && req.user.id.toString() !== buyer.vendorId.toString()) {
+            return res.status(403).json({ success: false, message: "Unauthorized access" });
+        }
+
+        // 1. Fetch related data
+        const [transactions, payments] = await Promise.all([
+            Transaction.find({ buyerId: bid }).sort({ date: 1 }).populate("productId", "name image date variants"),
+            BuyerPayment.find({ buyerId: bid }).sort({ date: 1 })
+        ]);
+
+        // 2. Build Ledger Entries
+        const ledger = [];
+        transactions.forEach(t => {
+            ledger.push({
+                date: t.date,
+                description: `Purchase - ${t.productId?.name || "Unknown Product"}`,
+                debit: Number(t.finalAmount) || 0,
+                credit: 0,
+                type: 'purchase',
+                id: t._id
+            });
+        });
+
+        payments.forEach(p => {
+            ledger.push({
+                date: p.date,
+                description: p.note || 'Payment Received',
+                debit: 0,
+                credit: Number(p.amount) || 0,
+                type: 'payment',
+                id: p._id
+            });
+        });
+
+        // Sort by date
+        ledger.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // Compute running balance
+        let runBalance = 0;
+        const processedLedger = ledger.map(entry => {
+            runBalance += Number(entry.debit) - Number(entry.credit);
+            return { ...entry, balance: runBalance };
+        });
+
+        // 3. Totals
+        const totalPurchases = transactions.reduce((sum, t) => sum + (Number(t.finalAmount) || 0), 0);
+        const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                buyer: {
+                    ...buyer.toObject(),
+                    id: buyer._id.toString(),
+                    totalPurchases,
+                    totalPaid,
+                    balance: totalPurchases - totalPaid
+                },
+                transactions,
+                payments,
+                ledger: processedLedger.reverse() // Newest first for UI
+            }
+        });
+
     } catch (error) {
         res.status(500).json({ success: false, message: "Server Error", error: error.message });
     }
