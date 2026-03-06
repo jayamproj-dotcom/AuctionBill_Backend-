@@ -8,9 +8,13 @@ const buyerSchema = new mongoose.Schema(
             required: true,
         },
         name: { type: String, required: true, trim: true },
-        contact: { type: String, trim: true, default: "" },
+        contact: { type: String, required: true, trim: true },
+        email: { type: String, trim: true, lowercase: true, default: "" },
+        state: { type: String, trim: true, default: "" },
+        city: { type: String, trim: true, default: "" },
         address: { type: String, trim: true, default: "" },
         status: { type: String, enum: ["active", "inactive"], default: "active" },
+       
     },
     { timestamps: true }
 );
