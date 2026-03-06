@@ -29,6 +29,9 @@ app.use("/api/commission", require("./routes/commissionRoute"));
 //Seller Routes
 app.use("/api/seller", require("./routes/sellerRoute"));
 
+//Buyer Routes
+app.use("/api/buyer", require("./routes/buyerRoute"));
+
 //Auction Routes
 app.use("/api/auction", require("./routes/auctionRoute"));
 

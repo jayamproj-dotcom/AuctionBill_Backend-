@@ -14,18 +14,8 @@ router.put("/products/update/:id", roleMiddleware("admin", "vendor"), auctionCon
 router.delete("/products/delete/:id", roleMiddleware("admin", "vendor"), auctionController.deleteAuctionProduct);
 router.patch("/products/status/:id", roleMiddleware("admin", "vendor"), auctionController.toggleProductStatus);
 
-// ── Buyers ────────────────────────────────────────────────────────────
-router.get("/buyers/list/:vendorId", roleMiddleware("admin", "vendor"), auctionController.getBuyers);
-router.post("/buyers/add", roleMiddleware("admin", "vendor"), auctionController.addBuyer);
-router.put("/buyers/update/:id", roleMiddleware("admin", "vendor"), auctionController.updateBuyer);
-router.delete("/buyers/delete/:id", roleMiddleware("admin", "vendor"), auctionController.deleteBuyer);
-
 // ── Transactions ──────────────────────────────────────────────────────
 router.get("/transactions/list/:vendorId", roleMiddleware("admin", "vendor"), auctionController.getTransactions);
 router.post("/transactions/add", roleMiddleware("admin", "vendor"), auctionController.recordSale);
-
-// ── Payments ──────────────────────────────────────────────────────────
-router.get("/payments/list/:vendorId", roleMiddleware("admin", "vendor"), auctionController.getBuyerPayments);
-router.post("/payments/add", roleMiddleware("admin", "vendor"), auctionController.addBuyerPayment);
 
 module.exports = router;
