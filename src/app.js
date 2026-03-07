@@ -8,6 +8,10 @@ app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
+app.get("/api", (req, res) => {
+  res.json({ message: "API working" });
+});
+
 //Admin Routes
 app.use("/api/admin", require("./routes/adminRoute"));
 
