@@ -16,7 +16,7 @@ exports.getAuctionProducts = async (req, res) => {
         }
 
         const query = { vendorId: new mongoose.Types.ObjectId(vendorId) };
-        if (date)     query.date     = date;
+        if (date) query.date = date;
         if (sellerId && mongoose.Types.ObjectId.isValid(sellerId)) {
             query.sellerId = new mongoose.Types.ObjectId(sellerId);
         }
@@ -117,13 +117,13 @@ exports.toggleProductStatus = async (req, res) => {
 exports.recordSale = async (req, res) => {
     try {
         const {
-            vendorId, sellerId, buyerId, productId, variantId,
+            vendorId, sellerId, buyerId, buyerName, productId, variantId,
             date, quantity, rate, finalAmount, commissionPercent,
             commissionAmount, netAmount
         } = req.body;
 
         const transaction = new Transaction({
-            vendorId, sellerId, buyerId, productId, variantId,
+            vendorId, sellerId, buyerId, buyerName, productId, variantId,
             date, quantity, rate, finalAmount, commissionPercent,
             commissionAmount, netAmount
         });
