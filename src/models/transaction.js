@@ -30,12 +30,6 @@ const transactionSchema = new mongoose.Schema(
         commissionPercent: { type: Number, default: 0 },
         commissionAmount:  { type: Number, default: 0 }, // finalAmount × commissionPercent/100
         netAmount: { type: Number, default: 0 },          // finalAmount - commissionAmount
-        paymentStatus: {
-            type: String,
-            enum: ["Paid", "Part Paid", "Pending"],
-            default: "Pending",
-        },
-        amountPaid: { type: Number, default: 0 },
     },
     { timestamps: true }
 );

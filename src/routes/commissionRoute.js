@@ -16,6 +16,9 @@ router.get("/:vendorId", roleMiddleware("admin", "vendor"), commissionController
 // Update or create commission for a vendor
 router.put("/:vendorId", roleMiddleware("admin", "vendor"), commissionController.updateVendorCommission);
 
+// Get all commission records (transactions) for a vendor
+router.get("/records/:vendorId", roleMiddleware("admin", "vendor"), commissionController.getCommissionRecords);
+
 // Delete commission for a vendor
 router.delete("/:vendorId", roleMiddleware("admin"), commissionController.deleteCommission);
 

@@ -119,37 +119,16 @@ exports.recordSale = async (req, res) => {
         const {
             vendorId, sellerId, buyerId, productId, variantId,
             date, quantity, rate, finalAmount, commissionPercent,
-            commissionAmount, netAmount, paymentStatus, amountPaid
+            commissionAmount, netAmount
         } = req.body;
 
         const transaction = new Transaction({
             vendorId, sellerId, buyerId, productId, variantId,
             date, quantity, rate, finalAmount, commissionPercent,
-            commissionAmount, netAmount, paymentStatus, amountPaid
+            commissionAmount, netAmount
         });
 
         await transaction.save();
-
-        // If payment was made at time of sale, record it in BuyerPayment
-        let payAmount = 0;
-        if (paymentStatus === 'Paid') {
-            payAmount = finalAmount;
-        } else if (paymentStatus === 'Part Paid') {
-            payAmount = amountPaid || 0;
-        }
-
-        if (payAmount > 0) {
-            const payment = new BuyerPayment({
-                vendorId,
-                buyerId,
-                date,
-                amount: payAmount,
-                method: 'Cash',
-                note: 'Payment at sale',
-                reference: `SALE-${transaction._id}`
-            });
-            await payment.save();
-        }
 
         // Update AuctionProduct sellQuantity
         const product = await AuctionProduct.findById(productId);
