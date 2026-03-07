@@ -4,43 +4,67 @@ const Plan = require("../models/subscriptions");
 const Admin = require("../models/admin");
 const bcrypt = require("bcryptjs");
 const sendEmail = require("../utils/sendEmail");
-const ExcelJS = require('exceljs');
+const ExcelJS = require("exceljs");
 const Notification = require("../models/notification");
 const UserSubscription = require("../models/userSubscription");
 
+function addDays(date, days) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
 
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const vendor = await Vendor.findOne({ email }).populate("plan", "name planId");
+    const vendor = await Vendor.findOne({ email }).populate(
+      "plan",
+      "name planId",
+    );
     if (!vendor) {
-      return res.status(401).json({ status: false, message: "Invalid email or password" });
+      return res.status(404).json({
+        status: false,
+        message: "Account not found. Please create an account.",
+      });
     }
 
     const isPasswordValid = await bcrypt.compare(password, vendor.password);
     if (!isPasswordValid) {
-      return res.status(401).json({ status: false, message: "Invalid email or password" });
+      return res
+        .status(401)
+        .json({ status: false, message: "Invalid email or password" });
     }
 
-
     if (vendor.status !== "Active") {
-      return res.status(403).json({ status: false, message: "Your account is not active. Please contact support." });
+      return res.status(403).json({
+        status: false,
+        message: "Your account is not active. Please contact support.",
+      });
     }
 
     if (vendor.planEndDate && new Date() > new Date(vendor.planEndDate)) {
-      return res.status(403).json({ status: false, message: "Your subscription plan has expired. Please renew to continue." });
+      return res.status(403).json({
+        status: false,
+        message:
+          "Your subscription plan has expired. Please renew to continue.",
+      });
     }
 
-    const token = jwt.sign({ id: vendor._id, role: "vendor" }, process.env.JWT_SECRET, { expiresIn: "1d" });
+    const token = jwt.sign(
+      { id: vendor._id, role: "vendor" },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" },
+    );
 
     const vendorData = vendor.toObject();
     delete vendorData.password;
+    delete vendorData.otp;
+    delete vendorData.otpExpires;
 
     const activeSubscription = await UserSubscription.findOne({
       userId: vendor._id,
-      endDate: { $gte: new Date() }
-    }).sort({ createdAt: -1 });
+      startDate: { $lte: new Date() },
+      endDate: { $gte: new Date() },
+    }).sort({ startDate: -1 });
 
     res.status(200).json({
       status: true,
@@ -49,8 +73,8 @@ exports.login = async (req, res) => {
       user: {
         ...vendorData,
         role: "vendor",
-        activeSubscription
-      }
+        activeSubscription,
+      },
     });
   } catch (error) {
     console.error("Vendor login error:", error);
@@ -70,22 +94,19 @@ exports.signup = async (req, res) => {
     // Check if plan exists
     const planExists = await Plan.findById(plan);
     if (!planExists) {
-      return res.status(400).json({ status: false, message: "Invalid subscription plan." });
+      return res
+        .status(400)
+        .json({ status: false, message: "Invalid subscription plan." });
     }
 
     const vendorEmailExists = await Vendor.findOne({ email });
     if (vendorEmailExists) {
-      return res.status(400).json({ status: false, message: "Email is already in use" });
+      return res
+        .status(400)
+        .json({ status: false, message: "Email is already in use" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    let planEndDate = new Date();
-    if (planExists.durationType === "year") {
-      planEndDate.setFullYear(planEndDate.getFullYear() + (planExists.durationValue || 1));
-    } else {
-      planEndDate.setDate(planEndDate.getDate() + (30 * (planExists.durationValue || 1)));
-    }
 
     const newVendor = new Vendor({
       name,
@@ -97,7 +118,6 @@ exports.signup = async (req, res) => {
       city,
       state,
       plan,
-      planEndDate,
       status: "Pending", // Initial status for signup
     });
 
@@ -162,7 +182,11 @@ exports.signup = async (req, res) => {
         `;
 
     try {
-      await sendEmail(email, "Your Subscription Request Has Been Received", emailContent);
+      await sendEmail(
+        email,
+        "Your Subscription Request Has Been Received",
+        emailContent,
+      );
     } catch (emailErr) {
       console.error("Email error:", emailErr);
     }
@@ -173,14 +197,19 @@ exports.signup = async (req, res) => {
         vendorId: newVendor._id,
         title: "New Vendor Registration",
         message: `${name} has requested for ${planExists.name} plan.`,
-        type: "new_registration"
+        type: "new_registration",
       });
       await adminNotification.save();
     } catch (notifErr) {
       console.error("Notification error:", notifErr);
     }
 
-    res.status(201).json({ status: true, message: "Subscription request submitted successfully. Please wait for admin approval.", vendor: newVendor });
+    res.status(201).json({
+      status: true,
+      message:
+        "Subscription request submitted successfully. Please wait for admin approval.",
+      vendor: newVendor,
+    });
   } catch (error) {
     console.error("Signup error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -189,7 +218,8 @@ exports.signup = async (req, res) => {
 
 exports.createVendor = async (req, res) => {
   try {
-    let { name, email, phone, address, city, state, plan, status, profilePic } = req.body;
+    let { name, email, phone, address, city, state, plan, status, profilePic } =
+      req.body;
 
     if (req.file) {
       profilePic = `/uploads/vendors/${req.file.filename}`;
@@ -198,28 +228,44 @@ exports.createVendor = async (req, res) => {
     // Check if plan exists
     const planExists = await Plan.findById(plan);
     if (!planExists) {
-      return res.status(400).json({ status: false, message: "Invalid subscription plan." });
+      return res
+        .status(400)
+        .json({ status: false, message: "Invalid subscription plan." });
     }
 
     const vendorNameExists = await Vendor.findOne({ name });
     if (vendorNameExists) {
-      return res.status(400).json({ status: false, message: "Name is already in use" });
+      return res
+        .status(400)
+        .json({ status: false, message: "Name is already in use" });
     }
 
     const vendorEmailExists = await Vendor.findOne({ email });
     if (vendorEmailExists) {
-      return res.status(400).json({ status: false, message: "Email is already in use" });
+      return res
+        .status(400)
+        .json({ status: false, message: "Email is already in use" });
     }
 
     // Generate a random 8-character password
     const plainPassword = Math.random().toString(36).slice(-8);
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
-    let planEndDate = new Date();
-    if (planExists.durationType === "year") {
-      planEndDate.setFullYear(planEndDate.getFullYear() + (planExists.durationValue || 1));
-    } else {
-      planEndDate.setDate(planEndDate.getDate() + (30 * (planExists.durationValue || 1)));
+    let planEndDate = null;
+
+    if (status === "Active" || !status) {
+      planEndDate = new Date();
+
+      if (planExists.durationType === "year") {
+        planEndDate.setFullYear(
+          planEndDate.getFullYear() + (planExists.durationValue || 1),
+        );
+      } else {
+        planEndDate = addDays(
+          planEndDate,
+          30 * (planExists.durationValue || 1),
+        );
+      }
     }
 
     const newVendor = new Vendor({
@@ -247,14 +293,15 @@ exports.createVendor = async (req, res) => {
         priceAtPurchase: planExists.price,
         featuresAtPurchase: planExists.features || {},
         startDate: new Date(),
-        endDate: planEndDate
+        endDate: planEndDate,
       });
     }
 
     // Send Email to Vendor
     const planName = planExists.name || "Default Plan";
-    const planPrice = planExists.price !== undefined ? `$${planExists.price}` : "N/A";
-    const planDuration = `${planExists.durationValue || 1} ${planExists.durationType === 'year' ? 'year' : 'Month (30 Days)'}(s)`;
+    const planPrice =
+      planExists.price !== undefined ? `$${planExists.price}` : "N/A";
+    const planDuration = `${planExists.durationValue || 1} ${planExists.durationType === "year" ? "year" : "Month"}(s)`;
 
     const emailContent = `
   <!DOCTYPE html>
@@ -271,7 +318,7 @@ exports.createVendor = async (req, res) => {
                  style="background:#ffffff; margin:40px 0; border-radius:8px; overflow:hidden;">
             <tr>
               <td align="center" style="background:#f39c12; padding:25px; color:#ffffff;">
-                <h1 style="margin:0; font-size:24px;">${process.env.COMPANY_NAME || 'AuctionBilling'}</h1>
+                <h1 style="margin:0; font-size:24px;">${process.env.COMPANY_NAME || "AuctionBilling"}</h1>
                 <p style="margin:5px 0 0; font-size:14px;">Vendor Account Details</p>
               </td>
             </tr>
@@ -311,7 +358,7 @@ exports.createVendor = async (req, res) => {
                 <p>Please log in and change your password for security reasons.</p>
                 
                 <div style="text-align:center; margin-top:25px;">
-                  <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/auctionbilling/" 
+                  <a href="${process.env.CLIENT_URL || "http://localhost:5173"}/auctionbilling/" 
                      style="background:#27ae60; color:#ffffff; padding:12px 25px; text-decoration:none; border-radius:5px; font-weight:bold;">
                     Login to Portal
                   </a>
@@ -320,7 +367,7 @@ exports.createVendor = async (req, res) => {
             </tr>
             <tr>
               <td align="center" style="background:#f1f1f1; padding:20px; font-size:12px; color:#777;">
-                <p style="margin:0;">© ${new Date().getFullYear()} ${process.env.COMPANY_NAME || 'AuctionBilling'}. All rights reserved.</p>
+                <p style="margin:0;">© ${new Date().getFullYear()} ${process.env.COMPANY_NAME || "AuctionBilling"}. All rights reserved.</p>
               </td>
             </tr>
           </table>
@@ -331,9 +378,17 @@ exports.createVendor = async (req, res) => {
   </html>
         `;
 
-    await sendEmail(email, "Your Vendor Account Has Been Created", emailContent);
+    await sendEmail(
+      email,
+      "Your Vendor Account Has Been Created",
+      emailContent,
+    );
 
-    res.status(201).json({ status: true, message: "Vendor created successfully", vendor: newVendor });
+    res.status(201).json({
+      status: true,
+      message: "Vendor created successfully",
+      vendor: newVendor,
+    });
   } catch (error) {
     console.error("Create vendor error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -342,19 +397,24 @@ exports.createVendor = async (req, res) => {
 
 exports.getVendors = async (req, res) => {
   try {
-    const vendors = await Vendor.find().populate("plan", "name planId price durationType durationValue").populate("requestedPlan", "name planId price");
-    const vendorIds = vendors.map(v => v._id);
+    const vendors = await Vendor.find()
+      .populate("plan", "name planId price durationType durationValue")
+      .populate("requestedPlan", "name planId price");
+    const vendorIds = vendors.map((v) => v._id);
 
     // Fetch active subscriptions for these vendors
     const activeSubscriptions = await UserSubscription.find({
-      userId: { $in: vendorIds }
+      userId: { $in: vendorIds },
+      endDate: { $gte: new Date() },
     }).sort({ createdAt: -1 });
 
-    const vendorsWithSub = vendors.map(vendor => {
-      const sub = activeSubscriptions.find(s => s.userId.toString() === vendor._id.toString());
+    const vendorsWithSub = vendors.map((vendor) => {
+      const sub = activeSubscriptions.find(
+        (s) => s.userId.toString() === vendor._id.toString(),
+      );
       return {
         ...vendor.toObject(),
-        activeSubscription: sub || null
+        activeSubscription: sub || null,
       };
     });
 
@@ -368,22 +428,27 @@ exports.getVendors = async (req, res) => {
 exports.getVendorById = async (req, res) => {
   try {
     const { id } = req.params;
-    const vendor = await Vendor.findById(id).populate("plan", "name planId price durationType durationValue");
+    const vendor = await Vendor.findById(id).populate(
+      "plan",
+      "name planId price durationType durationValue",
+    );
     if (!vendor) {
-      return res.status(404).json({ status: false, message: "Vendor not found" });
+      return res
+        .status(404)
+        .json({ status: false, message: "Vendor not found" });
     }
 
     const activeSubscription = await UserSubscription.findOne({
       userId: id,
-      endDate: { $gte: new Date() }
+      endDate: { $gte: new Date() },
     }).sort({ createdAt: -1 });
 
     res.status(200).json({
       status: true,
       vendor: {
         ...vendor.toObject(),
-        activeSubscription: activeSubscription || null
-      }
+        activeSubscription: activeSubscription || null,
+      },
     });
   } catch (error) {
     console.error("Get vendor by id error:", error);
@@ -398,22 +463,24 @@ exports.getAllPurchases = async (req, res) => {
       .populate("subscriptionId", "name")
       .sort({ createdAt: -1 });
 
-    const formattedPurchases = purchases.map(sub => {
+    const formattedPurchases = purchases.map((sub) => {
       const currentDate = new Date();
       const isExpired = new Date(sub.endDate) < currentDate;
-      const currentSubStatus = isExpired ? 'Expired' : (sub.userId?.status || 'Active');
+      const currentSubStatus = isExpired
+        ? "Expired"
+        : sub.userId?.status || "Active";
 
       return {
         id: sub._id,
         vendorId: sub.userId?._id,
-        vendorName: sub.userId?.name || 'Unknown Vendor',
-        plan: sub.subscriptionId?.name || 'Unknown Plan',
+        vendorName: sub.userId?.name || "Unknown Vendor",
+        plan: sub.subscriptionId?.name || "Unknown Plan",
         price: sub.priceAtPurchase || 0,
         status: currentSubStatus,
-        paymentStatus: 'Paid',
+        paymentStatus: "Paid",
         startDate: sub.startDate,
         expiryDate: sub.endDate,
-        transactionId: `TXN_${sub._id.toString().slice(-6).toUpperCase()}`
+        transactionId: `TXN_${sub._id.toString().slice(-6).toUpperCase()}`,
       };
     });
 
@@ -431,14 +498,15 @@ exports.getVendorPurchasesById = async (req, res) => {
       .populate("subscriptionId", "name durationType durationValue features")
       .sort({ createdAt: -1 });
 
-    const formattedPurchases = purchases.map(sub => {
-      let durationStr = sub.subscriptionId?.durationType === "year" ? "Yearly" : "30 Days";
+    const formattedPurchases = purchases.map((sub) => {
+      let durationStr =
+        sub.subscriptionId?.durationType === "year" ? "Yearly" : "Month";
       return {
         id: `INV-${new Date(sub.createdAt).getFullYear()}-${sub._id.toString().slice(-4).toUpperCase()}`,
         date: sub.createdAt,
         amount: sub.priceAtPurchase || 0,
         status: "Paid",
-        description: `${sub.subscriptionId?.name || "Plan"} - ${durationStr}`
+        description: `${sub.subscriptionId?.name || "Plan"} - ${durationStr}`,
       };
     });
 
@@ -452,7 +520,19 @@ exports.getVendorPurchasesById = async (req, res) => {
 exports.updateVendor = async (req, res) => {
   try {
     const { id } = req.params;
-    let { name, email, phone, address, city, state, plan, status, profilePic, requestedPlan, upgradeType } = req.body;
+    let {
+      name,
+      email,
+      phone,
+      address,
+      city,
+      state,
+      plan,
+      status,
+      profilePic,
+      requestedPlan,
+      upgradeType,
+    } = req.body;
 
     if (req.file) {
       profilePic = `/uploads/vendors/${req.file.filename}`;
@@ -460,43 +540,62 @@ exports.updateVendor = async (req, res) => {
 
     const vendor = await Vendor.findById(id);
     if (!vendor) {
-      return res.status(404).json({ status: false, message: "Vendor not found" });
+      return res
+        .status(404)
+        .json({ status: false, message: "Vendor not found" });
     }
 
     if (name && name !== vendor.name) {
       const nameExists = await Vendor.findOne({ name });
       if (nameExists) {
-        return res.status(400).json({ status: false, message: "Name is already in use" });
+        return res
+          .status(400)
+          .json({ status: false, message: "Name is already in use" });
       }
     }
 
     if (email && email !== vendor.email) {
       const emailExists = await Vendor.findOne({ email });
       if (emailExists) {
-        return res.status(400).json({ status: false, message: "Email is already in use" });
+        return res
+          .status(400)
+          .json({ status: false, message: "Email is already in use" });
       }
     }
 
     let activePlanData = null;
-    let oldPlanEndDate = vendor.planEndDate ? new Date(vendor.planEndDate) : new Date();
+    let oldPlanEndDate = vendor.planEndDate
+      ? new Date(vendor.planEndDate)
+      : new Date();
 
     if (plan) {
       const planExists = await Plan.findById(plan);
       if (!planExists) {
-        return res.status(400).json({ status: false, message: "Invalid subscription plan." });
+        return res
+          .status(400)
+          .json({ status: false, message: "Invalid subscription plan." });
       }
       vendor.plan = plan;
       activePlanData = planExists;
 
       let planEndDate = new Date();
-      if (vendor.upgradeType === 'after_current' && vendor.planEndDate && new Date(vendor.planEndDate) > new Date()) {
+      if (
+        upgradeType === "after_current" &&
+        vendor.planEndDate &&
+        new Date(vendor.planEndDate) > new Date()
+      ) {
         planEndDate = new Date(vendor.planEndDate);
       }
 
-      if (planExists.durationType === 'year') {
-        planEndDate.setFullYear(planEndDate.getFullYear() + (planExists.durationValue || 1));
+      if (planExists.durationType === "year") {
+        planEndDate.setFullYear(
+          planEndDate.getFullYear() + (planExists.durationValue || 1),
+        );
       } else {
-        planEndDate.setDate(planEndDate.getDate() + (30 * (planExists.durationValue || 1)));
+        planEndDate = addDays(
+          planEndDate,
+          30 * (planExists.durationValue || 1),
+        );
       }
       vendor.planEndDate = planEndDate;
       vendor.requestedPlan = null;
@@ -506,7 +605,8 @@ exports.updateVendor = async (req, res) => {
       activePlanData = await Plan.findById(vendor.plan);
     }
 
-    const isProfileChanged = (name && vendor.name !== name) ||
+    const isProfileChanged =
+      (name && vendor.name !== name) ||
       (email && vendor.email !== email) ||
       (phone && vendor.phone !== phone) ||
       (address && vendor.address !== address) ||
@@ -514,7 +614,8 @@ exports.updateVendor = async (req, res) => {
       (state && vendor.state !== state) ||
       (status && vendor.status !== status) ||
       (profilePic !== undefined && vendor.profilePic !== profilePic) ||
-      (requestedPlan !== undefined && String(vendor.requestedPlan) !== String(requestedPlan));
+      (requestedPlan !== undefined &&
+        String(vendor.requestedPlan) !== String(requestedPlan));
 
     if (requestedPlan !== undefined) {
       if (requestedPlan === null || requestedPlan === "") {
@@ -523,7 +624,10 @@ exports.updateVendor = async (req, res) => {
       } else {
         const reqPlanExists = await Plan.findById(requestedPlan);
         if (!reqPlanExists) {
-          return res.status(400).json({ status: false, message: "Invalid requested subscription plan." });
+          return res.status(400).json({
+            status: false,
+            message: "Invalid requested subscription plan.",
+          });
         }
         vendor.requestedPlan = requestedPlan;
         if (upgradeType) {
@@ -535,7 +639,7 @@ exports.updateVendor = async (req, res) => {
             vendorId: vendor._id,
             title: "Plan Upgrade Request",
             message: `${vendor.name} has requested an upgrade to ${reqPlanExists.name} plan.`,
-            type: "plan_upgrade"
+            type: "plan_upgrade",
           });
           await adminNotification.save();
         } catch (notifErr) {
@@ -551,16 +655,22 @@ exports.updateVendor = async (req, res) => {
     if (city) vendor.city = city;
     if (state) vendor.state = state;
 
-    const wasPendingAndNowActive = (status && status === "Active" && vendor.status === "Pending");
+    const wasPendingAndNowActive =
+      status && status === "Active" && vendor.status === "Pending";
 
     // Recalculate start and end date if being approved today
     if (wasPendingAndNowActive) {
       vendor.joinedDate = new Date();
       let newEndDate = new Date();
-      if (activePlanData && activePlanData.durationType === 'year') {
-        newEndDate.setFullYear(newEndDate.getFullYear() + (activePlanData.durationValue || 1));
+      if (activePlanData && activePlanData.durationType === "year") {
+        newEndDate.setFullYear(
+          newEndDate.getFullYear() + (activePlanData.durationValue || 1),
+        );
       } else if (activePlanData) {
-        newEndDate.setDate(newEndDate.getDate() + (30 * (activePlanData.durationValue || 1)));
+        newEndDate = addDays(
+          newEndDate,
+          30 * (activePlanData.durationValue || 1),
+        );
       }
       vendor.planEndDate = newEndDate;
     }
@@ -576,7 +686,7 @@ exports.updateVendor = async (req, res) => {
         let subStartDate = new Date();
         if (wasPendingAndNowActive) {
           subStartDate = vendor.joinedDate;
-        } else if (vendor.upgradeType === 'after_current') {
+        } else if (upgradeType === "after_current") {
           subStartDate = oldPlanEndDate;
         }
 
@@ -586,15 +696,20 @@ exports.updateVendor = async (req, res) => {
           priceAtPurchase: activePlanData.price,
           featuresAtPurchase: activePlanData.features || {},
           startDate: subStartDate,
-          endDate: vendor.planEndDate
+          endDate: vendor.planEndDate,
         });
       }
     }
 
     if (isProfileChanged || plan) {
       const planName = activePlanData ? activePlanData.name : "Default Plan";
-      const planPrice = activePlanData && activePlanData.price !== undefined ? `$${activePlanData.price}` : "N/A";
-      const planDuration = activePlanData ? `${activePlanData.durationValue || 1} ${activePlanData.durationType === 'year' ? 'year' : 'Month (30 Days)'}(s)` : "N/A";
+      const planPrice =
+        activePlanData && activePlanData.price !== undefined
+          ? `$${activePlanData.price}`
+          : "N/A";
+      const planDuration = activePlanData
+        ? `${activePlanData.durationValue || 1} ${activePlanData.durationType === "year" ? "year" : "Month"}(s)`
+        : "N/A";
 
       const updateEmailContent = `
    <!DOCTYPE html>
@@ -611,7 +726,7 @@ exports.updateVendor = async (req, res) => {
                   style="background:#ffffff; margin:40px 0; border-radius:8px; overflow:hidden;">
              <tr>
                <td align="center" style="background:#f39c12; padding:25px; color:#ffffff;">
-                 <h1 style="margin:0; font-size:24px;">${process.env.COMPANY_NAME || 'AuctionBilling'}</h1>
+                 <h1 style="margin:0; font-size:24px;">${process.env.COMPANY_NAME || "AuctionBilling"}</h1>
                  <p style="margin:5px 0 0; font-size:14px;">Vendor Account Updated</p>
                </td>
              </tr>
@@ -653,7 +768,7 @@ exports.updateVendor = async (req, res) => {
                  </table>
                  
                  <div style="text-align:center; margin-top:25px;">
-                   <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/auctionbilling/" 
+                   <a href="${process.env.CLIENT_URL || "http://localhost:5173"}/auctionbilling/" 
                       style="background:#f39c12; color:#ffffff; 
                             padding:12px 25px; text-decoration:none; 
                             border-radius:5px; font-weight:bold;">
@@ -664,7 +779,7 @@ exports.updateVendor = async (req, res) => {
              </tr>
              <tr>
                <td align="center" style="background:#f1f1f1; padding:20px; font-size:12px; color:#777;">
-                 <p style="margin:0;">© ${new Date().getFullYear()} ${process.env.COMPANY_NAME || 'AuctionBilling'}. All rights reserved.</p>
+                 <p style="margin:0;">© ${new Date().getFullYear()} ${process.env.COMPANY_NAME || "AuctionBilling"}. All rights reserved.</p>
                </td>
              </tr>
            </table>
@@ -675,10 +790,16 @@ exports.updateVendor = async (req, res) => {
    </html>
              `;
 
-      await sendEmail(vendor.email, "Your Vendor Account Info Has Been Updated", updateEmailContent);
+      await sendEmail(
+        vendor.email,
+        "Your Vendor Account Info Has Been Updated",
+        updateEmailContent,
+      );
     }
 
-    res.status(200).json({ status: true, message: "Vendor updated successfully", vendor });
+    res
+      .status(200)
+      .json({ status: true, message: "Vendor updated successfully", vendor });
   } catch (error) {
     console.error("Update vendor error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -691,7 +812,9 @@ exports.deleteVendor = async (req, res) => {
     const vendor = await Vendor.findByIdAndDelete(id);
 
     if (!vendor) {
-      return res.status(404).json({ status: false, message: "Vendor not found" });
+      return res
+        .status(404)
+        .json({ status: false, message: "Vendor not found" });
     }
 
     const deleteEmailContent = `
@@ -716,7 +839,7 @@ exports.deleteVendor = async (req, res) => {
             </tr>
             <tr>
               <td align="center" style="background:#f1f1f1; padding:15px; font-size:12px; color:#777;">
-                © ${new Date().getFullYear()} ${process.env.COMPANY_NAME || 'AuctionBilling'}. All rights reserved.
+                © ${new Date().getFullYear()} ${process.env.COMPANY_NAME || "AuctionBilling"}. All rights reserved.
               </td>
             </tr>
           </table>
@@ -727,9 +850,15 @@ exports.deleteVendor = async (req, res) => {
   </html>
         `;
 
-    await sendEmail(vendor.email, "Your Vendor Account Has Been Deleted", deleteEmailContent);
+    await sendEmail(
+      vendor.email,
+      "Your Vendor Account Has Been Deleted",
+      deleteEmailContent,
+    );
 
-    res.status(200).json({ status: true, message: "Vendor deleted successfully" });
+    res
+      .status(200)
+      .json({ status: true, message: "Vendor deleted successfully" });
   } catch (error) {
     console.error("Delete vendor error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -743,19 +872,25 @@ exports.changePassword = async (req, res) => {
 
     const vendor = await Vendor.findById(vendorId);
     if (!vendor) {
-      return res.status(404).json({ status: false, message: "Vendor not found" });
+      return res
+        .status(404)
+        .json({ status: false, message: "Vendor not found" });
     }
 
     const isMatch = await bcrypt.compare(currentPassword, vendor.password);
     if (!isMatch) {
-      return res.status(400).json({ status: false, message: "Incorrect current password" });
+      return res
+        .status(400)
+        .json({ status: false, message: "Incorrect current password" });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     vendor.password = hashedPassword;
     await vendor.save();
 
-    res.status(200).json({ status: true, message: "Password changed successfully" });
+    res
+      .status(200)
+      .json({ status: true, message: "Password changed successfully" });
   } catch (error) {
     console.error("Change password error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -768,11 +903,17 @@ exports.forgotPassword = async (req, res) => {
     const vendor = await Vendor.findOne({ email });
 
     if (!vendor) {
-      return res.status(404).json({ status: false, message: "Vendor with this email does not exist" });
+      return res.status(404).json({
+        status: false,
+        message: "Vendor with this email does not exist",
+      });
     }
 
     if (vendor.status !== "Active") {
-      return res.status(403).json({ status: false, message: "Your account is inactive. Please contact the Admin." });
+      return res.status(403).json({
+        status: false,
+        message: "Your account is inactive. Please contact the Admin.",
+      });
     }
 
     // Generate 6-digit OTP
@@ -874,11 +1015,13 @@ exports.resetPassword = async (req, res) => {
     const vendor = await Vendor.findOne({
       email,
       otp,
-      otpExpires: { $gt: Date.now() }
+      otpExpires: { $gt: Date.now() },
     });
 
     if (!vendor) {
-      return res.status(400).json({ status: false, message: "Invalid or expired OTP" });
+      return res
+        .status(400)
+        .json({ status: false, message: "Invalid or expired OTP" });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -887,7 +1030,9 @@ exports.resetPassword = async (req, res) => {
     vendor.otpExpires = undefined;
     await vendor.save();
 
-    res.status(200).json({ status: true, message: "Password reset successfully" });
+    res
+      .status(200)
+      .json({ status: true, message: "Password reset successfully" });
   } catch (error) {
     console.error("Reset password error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -917,57 +1062,69 @@ exports.exportVendors = async (req, res) => {
 
     if (search) {
       query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } }
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
       ];
     }
 
     const vendors = await Vendor.find(query).populate("plan");
 
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Vendors');
+    const worksheet = workbook.addWorksheet("Vendors");
 
     worksheet.columns = [
-      { header: 'Vendor Name', key: 'name', width: 25 },
-      { header: 'Email', key: 'email', width: 30 },
-      { header: 'Phone', key: 'phone', width: 15 },
-      { header: 'Address', key: 'address', width: 30 },
-      { header: 'City', key: 'city', width: 15 },
-      { header: 'State', key: 'state', width: 15 },
-      { header: 'Status', key: 'status', width: 12 },
-      { header: 'Plan Name', key: 'planName', width: 20 },
-      { header: 'Plan Price', key: 'planPrice', width: 12 },
-      { header: 'Joined Date', key: 'joinedDate', width: 20 },
-      { header: 'Expiry Date', key: 'planEndDate', width: 20 },
+      { header: "Vendor Name", key: "name", width: 25 },
+      { header: "Email", key: "email", width: 30 },
+      { header: "Phone", key: "phone", width: 15 },
+      { header: "Address", key: "address", width: 30 },
+      { header: "City", key: "city", width: 15 },
+      { header: "State", key: "state", width: 15 },
+      { header: "Status", key: "status", width: 12 },
+      { header: "Plan Name", key: "planName", width: 20 },
+      { header: "Plan Price", key: "planPrice", width: 12 },
+      { header: "Joined Date", key: "joinedDate", width: 20 },
+      { header: "Expiry Date", key: "planEndDate", width: 20 },
     ];
 
     // Style the header row
     worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+    worksheet.getRow(1).alignment = {
+      vertical: "middle",
+      horizontal: "center",
+    };
 
-    vendors.forEach(vendor => {
+    vendors.forEach((vendor) => {
       worksheet.addRow({
         name: vendor.name,
         email: vendor.email,
         phone: vendor.phone,
-        address: vendor.address || 'N/A',
-        city: vendor.city || 'N/A',
-        state: vendor.state || 'N/A',
+        address: vendor.address || "N/A",
+        city: vendor.city || "N/A",
+        state: vendor.state || "N/A",
         status: vendor.status,
-        planName: vendor.plan?.name || 'N/A',
-        planPrice: vendor.plan?.price || '0',
-        joinedDate: vendor.joinedDate ? new Date(vendor.joinedDate).toLocaleDateString() : 'N/A',
-        planEndDate: vendor.planEndDate ? new Date(vendor.planEndDate).toLocaleDateString() : 'N/A'
+        planName: vendor.plan?.name || "N/A",
+        planPrice: vendor.plan?.price || "0",
+        joinedDate: vendor.joinedDate
+          ? new Date(vendor.joinedDate).toLocaleDateString()
+          : "N/A",
+        planEndDate: vendor.planEndDate
+          ? new Date(vendor.planEndDate).toLocaleDateString()
+          : "N/A",
       });
     });
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=vendors_report_${Date.now()}.xlsx`);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=vendors_report_${Date.now()}.xlsx`,
+    );
 
     const buffer = await workbook.xlsx.writeBuffer();
     res.send(buffer);
-
   } catch (error) {
     console.error("Export vendors error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });

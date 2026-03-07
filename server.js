@@ -10,5 +10,5 @@ const seedAdmin = require("./src/utils/seedAdmin");
 const connectDB = require("./src/config/db");
 
 connectDB().then(() => {
-  // seedAdmin();
+  seedAdmin();
 });
