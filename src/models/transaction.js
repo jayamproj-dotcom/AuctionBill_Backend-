@@ -14,9 +14,9 @@ const transactionSchema = new mongoose.Schema(
         },
         buyerId: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: "Buyer",
-            required: true,
+            ref: "Buyer"
         },
+        buyerName: { type: String }, // Random buyer name if not referencing DB
         productId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "AuctionProduct",
@@ -28,7 +28,7 @@ const transactionSchema = new mongoose.Schema(
         rate: { type: Number, default: 0 },          // price per unit
         finalAmount: { type: Number, required: true }, // gross = rate × qty
         commissionPercent: { type: Number, default: 0 },
-        commissionAmount:  { type: Number, default: 0 }, // finalAmount × commissionPercent/100
+        commissionAmount: { type: Number, default: 0 }, // finalAmount × commissionPercent/100
         netAmount: { type: Number, default: 0 },          // finalAmount - commissionAmount
     },
     { timestamps: true }
