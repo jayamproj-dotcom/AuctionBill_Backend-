@@ -71,24 +71,29 @@ exports.addAuctionProduct = async (req, res) => {
       image,
     } = req.body;
 
+    const roundedCommissionPercent = Math.round(commissionPercent || 0);
+    const roundedVariants = (variants || []).map((v) => ({
+      ...v,
+      quantity: Math.round(v.quantity || 0),
+      sellQuantity: Math.round(v.sellQuantity || 0),
+    }));
+
     const product = new AuctionProduct({
       vendorId,
       sellerId,
       name,
       date,
-      commissionPercent,
-      variants,
+      commissionPercent: roundedCommissionPercent,
+      variants: roundedVariants,
       image,
     });
 
     await product.save();
-    res
-      .status(201)
-      .json({
-        success: true,
-        message: "Auction product added successfully",
-        data: product,
-      });
+    res.status(201).json({
+      success: true,
+      message: "Auction product added successfully",
+      data: product,
+    });
   } catch (error) {
     res
       .status(500)
@@ -100,11 +105,23 @@ exports.addAuctionProduct = async (req, res) => {
 exports.updateAuctionProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const updatedProduct = await AuctionProduct.findByIdAndUpdate(
-      id,
-      req.body,
-      { returnDocument: "after" },
-    );
+    const body = { ...req.body };
+
+    if (body.commissionPercent !== undefined) {
+      body.commissionPercent = Math.round(body.commissionPercent || 0);
+    }
+
+    if (body.variants && Array.isArray(body.variants)) {
+      body.variants = body.variants.map((v) => ({
+        ...v,
+        quantity: Math.round(v.quantity || 0),
+        sellQuantity: Math.round(v.sellQuantity || 0),
+      }));
+    }
+
+    const updatedProduct = await AuctionProduct.findByIdAndUpdate(id, body, {
+      returnDocument: "after",
+    });
 
     if (!updatedProduct) {
       return res
@@ -112,13 +129,11 @@ exports.updateAuctionProduct = async (req, res) => {
         .json({ success: false, message: "Product not found" });
     }
 
-    res
-      .status(200)
-      .json({
-        success: true,
-        message: "Product updated successfully",
-        data: updatedProduct,
-      });
+    res.status(200).json({
+      success: true,
+      message: "Product updated successfully",
+      data: updatedProduct,
+    });
   } catch (error) {
     res
       .status(500)
@@ -183,6 +198,13 @@ exports.recordSale = async (req, res) => {
       netAmount,
     } = req.body;
 
+    const roundedQuantity = Math.round(quantity || 0);
+    const roundedRate = Math.round(rate || 0);
+    const roundedFinalAmount = Math.round(finalAmount || 0);
+    const roundedCommissionPercent = Math.round(commissionPercent || 0);
+    const roundedCommissionAmount = Math.round(commissionAmount || 0);
+    const roundedNetAmount = Math.round(netAmount || 0);
+
     const transaction = new Transaction({
       vendorId,
       sellerId,
@@ -191,12 +213,12 @@ exports.recordSale = async (req, res) => {
       productId,
       variantId,
       date,
-      quantity,
-      rate,
-      finalAmount,
-      commissionPercent,
-      commissionAmount,
-      netAmount,
+      quantity: roundedQuantity,
+      rate: roundedRate,
+      finalAmount: roundedFinalAmount,
+      commissionPercent: roundedCommissionPercent,
+      commissionAmount: roundedCommissionAmount,
+      netAmount: roundedNetAmount,
     });
 
     await transaction.save();
@@ -208,18 +230,16 @@ exports.recordSale = async (req, res) => {
         (v) => v._id.toString() === variantId,
       );
       if (vIndex !== -1) {
-        product.variants[vIndex].sellQuantity += quantity;
+        product.variants[vIndex].sellQuantity += roundedQuantity;
         await product.save();
       }
     }
 
-    res
-      .status(201)
-      .json({
-        success: true,
-        message: "Sale recorded successfully",
-        data: transaction,
-      });
+    res.status(201).json({
+      success: true,
+      message: "Sale recorded successfully",
+      data: transaction,
+    });
   } catch (error) {
     res
       .status(500)
