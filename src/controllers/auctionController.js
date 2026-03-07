@@ -273,3 +273,86 @@ exports.getTransactions = async (req, res) => {
       .json({ success: false, message: "Server Error", error: error.message });
   }
 };
+
+// Get specialized history with specific formatting
+exports.getHistory = async (req, res) => {
+  try {
+    const { vendorId } = req.params;
+    const { date, startDate, endDate, sellerId, productId } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(vendorId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid Vendor ID" });
+    }
+
+    const query = { vendorId: new mongoose.Types.ObjectId(vendorId) };
+
+    if (date) query.date = date;
+    if (startDate || endDate) {
+      query.date = {};
+      if (startDate) query.date.$gte = startDate;
+      if (endDate) query.date.$lte = endDate;
+    }
+    if (sellerId && mongoose.Types.ObjectId.isValid(sellerId)) {
+      query.sellerId = new mongoose.Types.ObjectId(sellerId);
+    }
+    if (productId && mongoose.Types.ObjectId.isValid(productId)) {
+      query.productId = new mongoose.Types.ObjectId(productId);
+    }
+
+    const transactions = await Transaction.find(query)
+      .populate("productId", "name variants")
+      .populate("sellerId", "name")
+      .populate("buyerId", "name")
+      .sort({ date: -1, createdAt: -1 });
+
+    let totalSalesValue = 0;
+    let totalCommValue = 0;
+
+    const formattedHistory = transactions.map((t) => {
+      const product = t.productId;
+      const variant = product?.variants?.find(
+        (v) => String(v._id) === String(t.variantId),
+      );
+      const unit = variant?.unit || "";
+
+      totalSalesValue += t.finalAmount || 0;
+      totalCommValue += t.commissionAmount || 0;
+
+      return {
+        ...t.toObject(),
+        // Standard lowercase keys for frontend defaults
+        date: t.date,
+        productName: product?.name || "Unknown Product",
+        sellerName: t.sellerId?.name || "Unknown Seller",
+        buyerName: t.buyerId?.name || t.buyerName || "Unknown Buyer",
+        quantity: t.quantity,
+        unit: unit,
+        QtyType: unit,
+        finalAmount: t.finalAmount,
+        commissionAmount: t.commissionAmount,
+        netAmount: t.netAmount,
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      history: formattedHistory,
+      stats: {
+        totalTransactions: transactions.length,
+        totalSales: totalSalesValue,
+        totalCommission: totalCommValue,
+      },
+      cardStatus: {
+        transactions: transactions.length,
+        sales: totalSalesValue,
+        commission: totalCommValue,
+      },
+    });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ success: false, message: "Server Error", error: error.message });
+  }
+};
