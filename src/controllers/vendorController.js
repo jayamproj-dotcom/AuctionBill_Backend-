@@ -92,6 +92,11 @@ exports.signup = async (req, res) => {
     }
 
     // Check if plan exists
+    if (!plan || plan === "null") {
+      return res
+        .status(400)
+        .json({ status: false, message: "Invalid subscription plan." });
+    }
     const planExists = await Plan.findById(plan);
     if (!planExists) {
       return res
@@ -226,6 +231,11 @@ exports.createVendor = async (req, res) => {
     }
 
     // Check if plan exists
+    if (!plan || plan === "null") {
+      return res
+        .status(400)
+        .json({ status: false, message: "Invalid subscription plan." });
+    }
     const planExists = await Plan.findById(plan);
     if (!planExists) {
       return res
@@ -568,7 +578,7 @@ exports.updateVendor = async (req, res) => {
       ? new Date(vendor.planEndDate)
       : new Date();
 
-    if (plan) {
+    if (plan && plan !== "null" && plan !== "") {
       const planExists = await Plan.findById(plan);
       if (!planExists) {
         return res
@@ -618,7 +628,7 @@ exports.updateVendor = async (req, res) => {
         String(vendor.requestedPlan) !== String(requestedPlan));
 
     if (requestedPlan !== undefined) {
-      if (requestedPlan === null || requestedPlan === "") {
+      if (!requestedPlan || requestedPlan === "null" || requestedPlan === "") {
         vendor.requestedPlan = null;
         vendor.upgradeType = null;
       } else {
