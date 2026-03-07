@@ -1,15 +1,38 @@
 const express = require("express");
 const cors = require("cors");
-const connectDB = require("./config/db");
+const path = require("path");
 
 const app = express();
 
-connectDB();
-
 app.use(cors());
 app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 //Admin Routes
 app.use("/api/admin", require("./routes/adminRoute"));
+
+//Subscription Routes
+app.use("/api/subscription", require("./routes/subscriptions.Route"));
+
+//Vendor Routes
+app.use("/api/vendor", require("./routes/vendorRoute"));
+
+//Notification Routes
+app.use("/api/notification", require("./routes/notificationRoute"));
+
+//Product Routes
+app.use("/api/product", require("./routes/productRoute"));
+
+//Commission Routes
+app.use("/api/commission", require("./routes/commissionRoute"));
+
+//Seller Routes
+app.use("/api/seller", require("./routes/sellerRoute"));
+
+//Buyer Routes
+app.use("/api/buyer", require("./routes/buyerRoute"));
+
+//Auction Routes
+app.use("/api/auction", require("./routes/auctionRoute"));
 
 module.exports = app;
