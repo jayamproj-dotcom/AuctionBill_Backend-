@@ -3,7 +3,10 @@ const Vendor = require("../models/vendor");
 
 exports.getNotifications = async (req, res) => {
   try {
-    const notifications = await Notification.find({ isRead: false })
+    const notifications = await Notification.find({
+      isRead: false,
+      recipient: "admin",
+    })
       .populate("vendorId", "name email")
       .sort({ createdAt: -1 });
 
@@ -30,11 +33,14 @@ exports.getVendorNotifications = async (req, res) => {
       const diffTime = expiryDate.getTime() - today.getTime();
       const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
-      if (diffDays <= 5 && diffDays > 0) {
-        const title = `Subscription Ends in ${diffDays} Day${diffDays > 1 ? "s" : ""}`;
+      // User requested: before two days for plane end only
+      if (diffDays === 2) {
+        const title = "Subscription Expiry Reminder";
+        const message = `Your active plan will expire in 2 days (on ${expiryDate.toLocaleDateString()}). Please renew or upgrade to avoid account suspension.`;
 
         const existingWarning = await Notification.findOne({
           vendorId,
+          recipient: "vendor",
           type: "subscription_alert",
           title: title,
         });
@@ -43,14 +49,35 @@ exports.getVendorNotifications = async (req, res) => {
           await new Notification({
             vendorId,
             title,
-            message: `Your active plan will expire in ${diffDays} day${diffDays > 1 ? "s" : ""}. Please renew to avoid account suspension.`,
+            message,
+            recipient: "vendor",
             type: "subscription_alert",
           }).save();
+
+          // Send Email to Vendor
+          const sendEmail = require("../utils/sendEmail");
+          const emailContent = `
+            <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+              <h2>Subscription Expiry Reminder</h2>
+              <p>Hello ${vendor.name},</p>
+              <p>This is a reminder that your current subscription plan is set to expire in <strong>2 days</strong>.</p>
+              <p><strong>Expiry Date:</strong> ${expiryDate.toLocaleDateString()}</p>
+              <p>Please log in to your dashboard to renew or upgrade your plan to ensure uninterrupted service.</p>
+              <br/>
+              <p>Regards,<br/>Auction Billing Team</p>
+            </div>
+          `;
+          await sendEmail(
+            vendor.email,
+            "Subscription Expiry Reminder",
+            emailContent,
+          );
         }
       } else if (diffDays <= 0) {
         const title = "Subscription Expired";
         const existingExpired = await Notification.findOne({
           vendorId,
+          recipient: "vendor",
           type: "subscription_alert",
           title: title,
         });
@@ -61,20 +88,32 @@ exports.getVendorNotifications = async (req, res) => {
             title,
             message:
               "Your subscription has ended. Please renew immediately to continue using the services.",
+            recipient: "vendor",
             type: "subscription_alert",
           }).save();
+
+          // Optional: Send expiry email too
+          const sendEmail = require("../utils/sendEmail");
+          await sendEmail(
+            vendor.email,
+            "Subscription Expired",
+            `Your subscription has expired. Please renew to continue.`,
+          );
         }
-      } else {
-        // Clear any subscription alerts if the plan has been renewed (diffDays > 5)
+      } else if (diffDays > 2) {
+        // Clear any subscription alerts if the plan has been renewed or is far from expiry
         await Notification.deleteMany({
           vendorId,
+          recipient: "vendor",
           type: "subscription_alert",
+          title: { $ne: "Subscription Expired" }, // Don't delete expired notifications
         });
       }
     }
 
     const notifications = await Notification.find({
       vendorId,
+      recipient: "vendor",
       isRead: false,
     }).sort({ createdAt: -1 });
 
@@ -119,6 +158,7 @@ exports.createUpgradeRequest = async (req, res) => {
       title: `Upgrade Request: ${type === "asset_upgrade" ? "Asset" : "Plan"}`,
       message,
       type,
+      recipient: "admin",
     });
 
     await newNotification.save();
