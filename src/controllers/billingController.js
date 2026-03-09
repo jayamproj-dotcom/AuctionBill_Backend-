@@ -52,17 +52,109 @@ exports.getBillingData = async (req, res) => {
 
         data.seller = seller;
         if (subType === "selling_product") {
-          data.records = await Transaction.find({
+          const allTransactions = await Transaction.find({ sellerId: id }).sort(
+            {
+              date: 1,
+              createdAt: 1,
+            },
+          );
+          const allPayments = await SellerPayment.find({ sellerId: id }).sort({
+            date: 1,
+            createdAt: 1,
+          });
+
+          // Track state for each transaction
+          const resultsMap = new Map();
+          const txnStates = allTransactions.map((t) => {
+            const obj = {
+              id: t._id.toString(),
+              pid: t.productId?._id?.toString() || t.productId?.toString(),
+              net: Number(t.netAmount) || Number(t.finalAmount) || 0,
+              paid: 0,
+              methods: new Set(),
+            };
+            resultsMap.set(obj.id, obj);
+            return obj;
+          });
+
+          // 1. Apply Product-Specific Payments
+          allPayments
+            .filter((p) => p.productId)
+            .forEach((p) => {
+              const pid = p.productId.toString();
+              let remaining = Number(p.amount) || 0;
+              for (let state of txnStates) {
+                if (remaining <= 0) break;
+                if (state.pid === pid) {
+                  const due = state.net - state.paid;
+                  if (due > 0) {
+                    const pay = Math.min(due, remaining);
+                    state.paid += pay;
+                    remaining -= pay;
+                    if (p.method) state.methods.add(p.method);
+                  }
+                }
+              }
+            });
+
+          // 2. Apply Global Payments
+          allPayments
+            .filter((p) => !p.productId)
+            .forEach((p) => {
+              let remaining = Number(p.amount) || 0;
+              for (let state of txnStates) {
+                if (remaining <= 0) break;
+                const due = state.net - state.paid;
+                if (due > 0) {
+                  const pay = Math.min(due, remaining);
+                  state.paid += pay;
+                  remaining -= pay;
+                  if (p.method) state.methods.add(p.method);
+                }
+              }
+            });
+
+          // Fetch only the requested records for the response, but use calculated states
+          const transactions = await Transaction.find({
             sellerId: id,
             ...(query.date ? { date: query.date } : {}),
-          }).populate("productId", "name variants");
+          })
+            .populate("productId", "name variants")
+            .populate("buyerId", "name");
+
+          data.records = transactions
+            .map((t) => {
+              const state = resultsMap.get(t._id.toString());
+              return {
+                ...t.toObject(),
+                paidAmount: state ? state.paid : 0,
+                balance: state
+                  ? state.net - state.paid
+                  : Number(t.netAmount) || 0,
+                method:
+                  state && state.methods.size > 0
+                    ? Array.from(state.methods).join(", ")
+                    : "N/A",
+              };
+            })
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+
           data.totalValue = data.records.reduce(
             (sum, r) => sum + (Number(r.finalAmount) || 0),
             0,
           );
           data.totalLabel = "TOTAL";
+          const totalPayments = allPayments.reduce(
+            (s, p) => s + (Number(p.amount) || 0),
+            0,
+          );
+          const totalTransactions = allTransactions.reduce(
+            (s, t) => s + (Number(t.netAmount) || Number(t.finalAmount) || 0),
+            0,
+          );
+          data.totalAdvance = Math.max(0, totalPayments - totalTransactions);
         } else {
-          // Payments History (Ledger)
+          // ... (Ledger code remains same)
           const payments = await SellerPayment.find({
             sellerId: id,
             ...(query.date ? { date: query.date } : {}),
@@ -119,17 +211,105 @@ exports.getBillingData = async (req, res) => {
 
         data.buyer = buyer;
         if (subType === "purchase_history") {
-          data.records = await Transaction.find({
+          const allTransactions = await Transaction.find({ buyerId: id }).sort({
+            date: 1,
+            createdAt: 1,
+          });
+          const allPayments = await BuyerPayment.find({ buyerId: id }).sort({
+            date: 1,
+            createdAt: 1,
+          });
+
+          const resultsMap = new Map();
+          const txnStates = allTransactions.map((t) => {
+            const obj = {
+              id: t._id.toString(),
+              pid: t.productId?._id?.toString() || t.productId?.toString(),
+              net: Number(t.finalAmount) || Number(t.totalAmount) || 0,
+              paid: 0,
+              methods: new Set(),
+            };
+            resultsMap.set(obj.id, obj);
+            return obj;
+          });
+
+          // 1. Product-specific
+          allPayments
+            .filter((p) => p.productId)
+            .forEach((p) => {
+              const pid = p.productId.toString();
+              let remaining = Number(p.amount) || 0;
+              for (let state of txnStates) {
+                if (remaining <= 0) break;
+                if (state.pid === pid) {
+                  const due = state.net - state.paid;
+                  if (due > 0) {
+                    const pay = Math.min(due, remaining);
+                    state.paid += pay;
+                    remaining -= pay;
+                    if (p.method) state.methods.add(p.method);
+                  }
+                }
+              }
+            });
+
+          // 2. Global
+          allPayments
+            .filter((p) => !p.productId)
+            .forEach((p) => {
+              let remaining = Number(p.amount) || 0;
+              for (let state of txnStates) {
+                if (remaining <= 0) break;
+                const due = state.net - state.paid;
+                if (due > 0) {
+                  const pay = Math.min(due, remaining);
+                  state.paid += pay;
+                  remaining -= pay;
+                  if (p.method) state.methods.add(p.method);
+                }
+              }
+            });
+
+          const transactions = await Transaction.find({
             buyerId: id,
             ...(query.date ? { date: query.date } : {}),
-          }).populate("productId", "name variants");
+          })
+            .populate("productId", "name variants")
+            .populate("sellerId", "name");
+
+          data.records = transactions
+            .map((t) => {
+              const state = resultsMap.get(t._id.toString());
+              return {
+                ...t.toObject(),
+                paidAmount: state ? state.paid : 0,
+                balance: state
+                  ? state.net - state.paid
+                  : Number(t.finalAmount) || 0,
+                method:
+                  state && state.methods.size > 0
+                    ? Array.from(state.methods).join(", ")
+                    : "N/A",
+              };
+            })
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+
           data.totalValue = data.records.reduce(
             (sum, r) => sum + (Number(r.finalAmount) || 0),
             0,
           );
           data.totalLabel = "TOTAL";
+          const totalPayments = allPayments.reduce(
+            (s, p) => s + (Number(p.amount) || 0),
+            0,
+          );
+          const totalTransactions = allTransactions.reduce(
+            (s, t) => s + (Number(t.finalAmount) || Number(t.totalAmount) || 0),
+            0,
+          );
+          data.totalAdvance = Math.max(0, totalPayments - totalTransactions);
         } else {
-          // Payments History (Ledger)
+          // ... (Ledger code remains same)
           const txns = await Transaction.find({
             buyerId: id,
             ...(query.date ? { date: query.date } : {}),
