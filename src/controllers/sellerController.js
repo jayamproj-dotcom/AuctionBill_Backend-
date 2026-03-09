@@ -27,7 +27,7 @@ exports.getSellers = async (req, res) => {
         // Augment each seller with summary stats
         const enrichedSellers = await Promise.all(sellers.map(async (s) => {
             const sid = s._id;
-            
+
             // Transactions (Sales)
             const txns = await Transaction.find({ sellerId: sid });
             const totalNetSales = txns.reduce((sum, t) => sum + (Number(t.netAmount) || 0), 0);
@@ -127,15 +127,15 @@ exports.getSellerSummary = async (req, res) => {
             const variantsWithStats = (p.variants || []).map(v => {
                 const vid = v._id?.toString();
                 const vTxns = pTxns.filter(t => t.variantId && t.variantId.toString() === vid);
-                
+
                 return {
                     ...v.toObject(),
                     id: vid,
                     sellQuantity: vTxns.reduce((s, t) => s + (Number(t.quantity) || 0), 0),
                     stats: {
-                        price:      vTxns.reduce((s, t) => s + (Number(t.finalAmount)      || 0), 0),
-                        commission: vTxns.reduce((s, t) => s + (Number(t.commissionAmount)  || 0), 0),
-                        net:        vTxns.reduce((s, t) => s + (Number(t.netAmount)         || 0), 0),
+                        price: vTxns.reduce((s, t) => s + (Number(t.finalAmount) || 0), 0),
+                        commission: vTxns.reduce((s, t) => s + (Number(t.commissionAmount) || 0), 0),
+                        net: vTxns.reduce((s, t) => s + (Number(t.netAmount) || 0), 0),
                     }
                 };
             });

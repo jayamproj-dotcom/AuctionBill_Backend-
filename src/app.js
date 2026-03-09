@@ -39,4 +39,7 @@ app.use("/api/buyer", require("./routes/buyerRoute"));
 //Auction Routes
 app.use("/api/auction", require("./routes/auctionRoute"));
 
+//Dashboard Routes
+app.use("/api/dashboard", require("./routes/dashboardRoute"));
+
 module.exports = app;

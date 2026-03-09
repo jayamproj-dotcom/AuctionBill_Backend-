@@ -203,6 +203,7 @@ exports.signup = async (req, res) => {
         title: "New Vendor Registration",
         message: `${name} has requested for ${planExists.name} plan.`,
         type: "new_registration",
+        recipient: "admin",
       });
       await adminNotification.save();
     } catch (notifErr) {
@@ -650,6 +651,7 @@ exports.updateVendor = async (req, res) => {
             title: "Plan Upgrade Request",
             message: `${vendor.name} has requested an upgrade to ${reqPlanExists.name} plan.`,
             type: "plan_upgrade",
+            recipient: "admin",
           });
           await adminNotification.save();
         } catch (notifErr) {
@@ -708,6 +710,26 @@ exports.updateVendor = async (req, res) => {
           startDate: subStartDate,
           endDate: vendor.planEndDate,
         });
+
+        // Notify Vendor about Approval / New Plan
+        const notifTitle = wasPendingAndNowActive
+          ? "Account Activated"
+          : "Plan Renewal/Upgrade Approved";
+        const notifMessage = wasPendingAndNowActive
+          ? `Your account has been activated with ${activePlanData.name} plan.`
+          : `Your request for ${activePlanData.name} plan has been approved and is now active until ${vendor.planEndDate.toLocaleDateString()}.`;
+
+        try {
+          await new Notification({
+            vendorId: vendor._id,
+            title: notifTitle,
+            message: notifMessage,
+            type: "plan_upgrade",
+            recipient: "vendor",
+          }).save();
+        } catch (err) {
+          console.error("Approval Notification error:", err);
+        }
       }
     }
 
