@@ -38,4 +38,7 @@ app.use("/api/auction", require("./routes/auctionRoute"));
 //Dashboard Routes
 app.use("/api/dashboard", require("./routes/dashboardRoute"));
 
+//Billing Routes
+app.use("/api/billing", require("./routes/billingRoutes"));
+
 module.exports = app;
