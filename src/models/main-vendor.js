@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const vendorSchema = new mongoose.Schema(
+const mainVendorSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
@@ -33,4 +33,4 @@ const vendorSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("Vendor", vendorSchema);
+module.exports = mongoose.model("MainVendor", mainVendorSchema);
