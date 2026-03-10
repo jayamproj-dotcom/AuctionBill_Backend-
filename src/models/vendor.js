@@ -3,19 +3,20 @@ const mongoose = require("mongoose");
 const vendorSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    phone: { type: String, required: true },
-    profilePic: { type: String },
+    email: { type: String, unique: true },
+    phone: { type: String},
     address: { type: String },
     city: { type: String },
     state: { type: String },
-    plan: { type: mongoose.Schema.Types.ObjectId, ref: "Plan", required: true },
-    requestedPlan: { type: mongoose.Schema.Types.ObjectId, ref: "Plan" },
-    upgradeType: { type: String, enum: ["from_today", "after_current"] },
+    branchId: { type: String },
+    mainVendorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MainVendor",
+      required: true,
+    },
     status: {
       type: String,
-      enum: ["Active", "Inactive", "Pending"],
+      enum: ["Active", "Inactive"],
       default: "Active",
     },
     joinedDate: { type: Date, default: Date.now },
@@ -27,8 +28,6 @@ const vendorSchema = new mongoose.Schema(
     deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
     // isDeleted: { type: Boolean, default: false },
     // deletedAt: { type: Date },
-    otp: { type: String },
-    otpExpires: { type: Date },
   },
   { timestamps: true },
 );
