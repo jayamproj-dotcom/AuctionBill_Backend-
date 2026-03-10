@@ -7,7 +7,7 @@ exports.getNotifications = async (req, res) => {
       isRead: false,
       recipient: "admin",
     })
-      .populate("vendorId", "name email")
+      .populate("userId", "name email")
       .sort({ createdAt: -1 });
 
     res.status(200).json({ status: true, notifications });
@@ -19,19 +19,27 @@ exports.getNotifications = async (req, res) => {
 
 exports.getVendorNotifications = async (req, res) => {
   try {
-    const vendorId = req.user.id;
+    const userId = req.user.id;
+    const userRole = req.user.role; // Assuming role is provided in token: 'vendor' or 'main-vendor'
 
-    const vendor = await Vendor.findById(vendorId);
+    const MainVendor = require("../models/main-vendor");
+    let user = await Vendor.findById(userId);
+    if (!user) {
+      user = await MainVendor.findById(userId);
+    }
 
-    if (vendor && vendor.planEndDate) {
+    if (user && user.planEndDate) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const expiryDate = new Date(vendor.planEndDate);
+      const expiryDate = new Date(user.planEndDate);
       expiryDate.setHours(0, 0, 0, 0);
 
       const diffTime = expiryDate.getTime() - today.getTime();
       const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+      const recipient = userRole === "main-vendor" ? "main-vendor" : "vendor";
+      const userModel = userRole === "main-vendor" ? "MainVendor" : "Vendor";
 
       // User requested: before two days for plane end only
       if (diffDays === 2) {
@@ -39,27 +47,28 @@ exports.getVendorNotifications = async (req, res) => {
         const message = `Your active plan will expire in 2 days (on ${expiryDate.toLocaleDateString()}). Please renew or upgrade to avoid account suspension.`;
 
         const existingWarning = await Notification.findOne({
-          vendorId,
-          recipient: "vendor",
+          userId,
+          recipient,
           type: "subscription_alert",
           title: title,
         });
 
         if (!existingWarning) {
           await new Notification({
-            vendorId,
+            userId,
+            userModel,
             title,
             message,
-            recipient: "vendor",
+            recipient,
             type: "subscription_alert",
           }).save();
 
-          // Send Email to Vendor
+          // Send Email
           const sendEmail = require("../utils/sendEmail");
           const emailContent = `
             <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
               <h2>Subscription Expiry Reminder</h2>
-              <p>Hello ${vendor.name},</p>
+              <p>Hello ${user.name},</p>
               <p>This is a reminder that your current subscription plan is set to expire in <strong>2 days</strong>.</p>
               <p><strong>Expiry Date:</strong> ${expiryDate.toLocaleDateString()}</p>
               <p>Please log in to your dashboard to renew or upgrade your plan to ensure uninterrupted service.</p>
@@ -68,7 +77,7 @@ exports.getVendorNotifications = async (req, res) => {
             </div>
           `;
           await sendEmail(
-            vendor.email,
+            user.email,
             "Subscription Expiry Reminder",
             emailContent,
           );
@@ -76,26 +85,27 @@ exports.getVendorNotifications = async (req, res) => {
       } else if (diffDays <= 0) {
         const title = "Subscription Expired";
         const existingExpired = await Notification.findOne({
-          vendorId,
-          recipient: "vendor",
+          userId,
+          recipient,
           type: "subscription_alert",
           title: title,
         });
 
         if (!existingExpired) {
           await new Notification({
-            vendorId,
+            userId,
+            userModel,
             title,
             message:
               "Your subscription has ended. Please renew immediately to continue using the services.",
-            recipient: "vendor",
+            recipient,
             type: "subscription_alert",
           }).save();
 
           // Optional: Send expiry email too
           const sendEmail = require("../utils/sendEmail");
           await sendEmail(
-            vendor.email,
+            user.email,
             "Subscription Expired",
             `Your subscription has expired. Please renew to continue.`,
           );
@@ -103,8 +113,8 @@ exports.getVendorNotifications = async (req, res) => {
       } else if (diffDays > 2) {
         // Clear any subscription alerts if the plan has been renewed or is far from expiry
         await Notification.deleteMany({
-          vendorId,
-          recipient: "vendor",
+          userId,
+          recipient,
           type: "subscription_alert",
           title: { $ne: "Subscription Expired" }, // Don't delete expired notifications
         });
@@ -112,8 +122,8 @@ exports.getVendorNotifications = async (req, res) => {
     }
 
     const notifications = await Notification.find({
-      vendorId,
-      recipient: "vendor",
+      userId,
+      recipient: userRole === "main-vendor" ? "main-vendor" : "vendor",
       isRead: false,
     }).sort({ createdAt: -1 });
 
@@ -151,10 +161,13 @@ exports.markAsRead = async (req, res) => {
 exports.createUpgradeRequest = async (req, res) => {
   try {
     const { type, message } = req.body;
-    const vendorId = req.user.id; // Assuming vendor is logged in
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    const userModel = userRole === "main-vendor" ? "MainVendor" : "Vendor";
 
     const newNotification = new Notification({
-      vendorId,
+      userId,
+      userModel,
       title: `Upgrade Request: ${type === "asset_upgrade" ? "Asset" : "Plan"}`,
       message,
       type,

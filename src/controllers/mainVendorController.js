@@ -114,19 +114,74 @@ exports.createMainVendor = async (req, res) => {
 exports.updateMainVendor = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    let updateData = req.body;
 
     // Remove protected fields
     delete updateData.password;
     delete updateData.role;
 
-    const updatedVendor = await MainVendor.findByIdAndUpdate(id, updateData, {
-      new: true,
-    });
-    if (!updatedVendor)
+    // Safe handle for ObjectId fields (avoid empty string errors)
+    if (
+      updateData.requestedPlan === "" ||
+      updateData.requestedPlan === "null"
+    ) {
+      updateData.requestedPlan = null;
+    }
+    if (updateData.plan === "" || updateData.plan === "null") {
+      delete updateData.plan;
+    }
+
+    // Capture the vendor before update to check for plan changes
+    const vendorBeforeUpdate = await MainVendor.findById(id);
+    if (!vendorBeforeUpdate) {
       return res
         .status(404)
         .json({ status: false, message: "Main vendor not found" });
+    }
+
+    // Process plan upgrade approval if requested
+    if (
+      updateData.plan &&
+      updateData.plan.toString() !== vendorBeforeUpdate.plan?.toString()
+    ) {
+      const newPlan = await Plan.findById(updateData.plan);
+      if (newPlan) {
+        // Recalculate planEndDate
+        let planEndDate = new Date();
+        if (
+          vendorBeforeUpdate.upgradeType === "after_current" &&
+          vendorBeforeUpdate.planEndDate > new Date()
+        ) {
+          planEndDate = new Date(vendorBeforeUpdate.planEndDate);
+        }
+
+        if (newPlan.durationType === "year") {
+          planEndDate.setFullYear(
+            planEndDate.getFullYear() + (newPlan.durationValue || 1),
+          );
+        } else {
+          planEndDate.setDate(
+            planEndDate.getDate() + 30 * (newPlan.durationValue || 1),
+          );
+        }
+
+        updateData.planEndDate = planEndDate;
+
+        // Create new UserSubscription record
+        await UserSubscription.create({
+          userId: id,
+          subscriptionId: newPlan._id,
+          priceAtPurchase: newPlan.price,
+          featuresAtPurchase: newPlan.features || {},
+          startDate: new Date(),
+          endDate: planEndDate,
+        });
+      }
+    }
+
+    const updatedVendor = await MainVendor.findByIdAndUpdate(id, updateData, {
+      new: true,
+    });
 
     res.status(200).json({
       status: true,
@@ -135,7 +190,10 @@ exports.updateMainVendor = async (req, res) => {
     });
   } catch (error) {
     console.error("Update main vendor error:", error);
-    res.status(500).json({ status: false, message: "Internal server error" });
+    res.status(500).json({
+      status: false,
+      message: error.message || "Internal server error",
+    });
   }
 };
 
@@ -230,6 +288,32 @@ exports.getMainVendorPurchases = async (req, res) => {
     res.status(200).json({ status: true, purchases: formattedPurchases });
   } catch (error) {
     console.error("Get all purchases error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.getMainVendorPurchasesById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const purchases = await UserSubscription.find({ userId: id })
+      .populate("subscriptionId", "name")
+      .sort({ createdAt: -1 });
+
+    const formattedPurchases = purchases.map((sub) => {
+      return {
+        id: sub._id,
+        plan: sub.subscriptionId?.name || "Unknown Plan",
+        amount: sub.priceAtPurchase || 0,
+        status: "Paid", // Assuming all entries in UserSubscription are paid
+        date: sub.startDate,
+        expiryDate: sub.endDate,
+        description: `${sub.subscriptionId?.name || "Subscription"} Plan`,
+      };
+    });
+
+    res.status(200).json({ status: true, purchases: formattedPurchases });
+  } catch (error) {
+    console.error("Get vendor purchases error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
@@ -350,11 +434,12 @@ exports.signup = async (req, res) => {
     // Notify Admin
     try {
       await Notification.create({
-        userId: null,
+        userId: newMainVendor._id,
+        userModel: "MainVendor",
         title: "New Main Vendor Signup Request",
         message: `New Main Vendor ${name} (${email}) has requested access.`,
-        type: "System",
-        recipientType: "Admin",
+        type: "new_registration",
+        recipient: "admin",
       });
     } catch (e) {
       console.error("Notification error:", e);

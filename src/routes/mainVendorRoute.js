@@ -50,4 +50,11 @@ router.get(
   mainVendorController.getMainVendorPurchases,
 );
 
+// Route to get specific main vendor purchases
+router.get(
+  "/:id/purchases",
+  authMiddleware,
+  mainVendorController.getMainVendorPurchasesById,
+);
+
 module.exports = router;
