@@ -31,14 +31,8 @@ exports.login = async (req, res) => {
       });
     }
 
-    // 2. Verify password (using Main Vendor's password)
-    // const isPasswordValid = await bcrypt.compare(password, mainVendor.password);
-    // if (!isPasswordValid) {
-    //   return res.status(401).json({
-    //     status: false,
-    //     message: "Invalid email or password",
-    //   });
-    // }
+    // 2. Verified branch by providing branchId and email of main vendor
+    // (Password check removed as per request)
 
     // 3. Find the specific Vendor branch using branchId
     const vendorBranch = await Vendor.findOne({
