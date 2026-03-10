@@ -5,6 +5,7 @@ const UserSubscription = require("../models/userSubscription");
 const ExcelJS = require("exceljs");
 const Notification = require("../models/notification");
 const sendEmail = require("../utils/sendEmail");
+const jwt = require("jsonwebtoken");
 
 function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
@@ -229,6 +230,249 @@ exports.getMainVendorPurchases = async (req, res) => {
     res.status(200).json({ status: true, purchases: formattedPurchases });
   } catch (error) {
     console.error("Get all purchases error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+// --- AUTH METHODS ---
+
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const mainVendor = await MainVendor.findOne({ email }).populate("plan");
+    if (!mainVendor) {
+      return res.status(404).json({
+        status: false,
+        message: "Account not found. Please create an account.",
+      });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, mainVendor.password);
+    if (!isPasswordValid) {
+      return res
+        .status(401)
+        .json({ status: false, message: "Invalid email or password" });
+    }
+
+    if (mainVendor.status !== "Active") {
+      return res.status(403).json({
+        status: false,
+        message: "Your account is not active. Please contact support.",
+      });
+    }
+
+    if (
+      mainVendor.planEndDate &&
+      new Date() > new Date(mainVendor.planEndDate)
+    ) {
+      return res.status(403).json({
+        status: false,
+        message:
+          "Your subscription plan has expired. Please renew to continue.",
+      });
+    }
+
+    const token = jwt.sign(
+      { id: mainVendor._id, role: "main-vendor" },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" },
+    );
+
+    const vendorData = mainVendor.toObject();
+    delete vendorData.password;
+    delete vendorData.otp;
+    delete vendorData.otpExpires;
+
+    const activeSubscription = await UserSubscription.findOne({
+      userId: mainVendor._id,
+      startDate: { $lte: new Date() },
+      endDate: { $gte: new Date() },
+    }).sort({ startDate: -1 });
+
+    res.status(200).json({
+      status: true,
+      message: "Login successful",
+      token,
+      user: {
+        ...vendorData,
+        role: "main-vendor",
+        activeSubscription,
+      },
+    });
+  } catch (error) {
+    console.error("Main Vendor login error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.signup = async (req, res) => {
+  try {
+    const { name, email, password, phone, address, city, state, plan } =
+      req.body;
+
+    if (!plan) {
+      return res
+        .status(400)
+        .json({ status: false, message: "Invalid subscription plan." });
+    }
+
+    const planExists = await Plan.findById(plan);
+    if (!planExists) {
+      return res
+        .status(400)
+        .json({ status: false, message: "Invalid subscription plan." });
+    }
+
+    const emailExists = await MainVendor.findOne({ email });
+    if (emailExists) {
+      return res
+        .status(400)
+        .json({ status: false, message: "Email is already in use" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newMainVendor = new MainVendor({
+      name,
+      email,
+      password: hashedPassword,
+      phone,
+      address,
+      city,
+      state,
+      plan,
+      status: "Pending",
+    });
+
+    await newMainVendor.save();
+
+    // Notify Admin
+    try {
+      await Notification.create({
+        userId: null,
+        title: "New Main Vendor Signup Request",
+        message: `New Main Vendor ${name} (${email}) has requested access.`,
+        type: "System",
+        recipientType: "Admin",
+      });
+    } catch (e) {
+      console.error("Notification error:", e);
+    }
+
+    res.status(201).json({
+      status: true,
+      message: "Registration request submitted. Please wait for admin review.",
+    });
+  } catch (error) {
+    console.error("Main Vendor signup error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const vendor = await MainVendor.findOne({ email });
+
+    if (!vendor) {
+      return res
+        .status(404)
+        .json({ status: false, message: "Vendor not found" });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    vendor.otp = otp;
+    vendor.otpExpires = Date.now() + 10 * 60 * 1000; // 10 mins
+    await vendor.save();
+
+    await sendEmail(
+      email,
+      "Password Reset OTP",
+      `Your OTP for password reset is ${otp}. Valid for 10 minutes.`,
+    );
+
+    res.status(200).json({ status: true, message: "OTP sent to email" });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    const vendor = await MainVendor.findOne({
+      email,
+      otp,
+      otpExpires: { $gt: Date.now() },
+    });
+
+    if (!vendor) {
+      return res
+        .status(400)
+        .json({ status: false, message: "Invalid or expired OTP" });
+    }
+
+    vendor.password = await bcrypt.hash(newPassword, 10);
+    vendor.otp = undefined;
+    vendor.otpExpires = undefined;
+    await vendor.save();
+
+    res
+      .status(200)
+      .json({ status: true, message: "Password reset successful" });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.getMainVendorProfile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const vendor = await MainVendor.findById(id).populate("plan");
+    if (!vendor) {
+      return res
+        .status(404)
+        .json({ status: false, message: "Vendor not found" });
+    }
+
+    const vendorData = vendor.toObject();
+    delete vendorData.password;
+
+    res.status(200).json({ status: true, vendor: vendorData });
+  } catch (error) {
+    console.error("Get profile error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const vendor = await MainVendor.findById(req.user.id);
+    if (!vendor) {
+      return res
+        .status(404)
+        .json({ status: false, message: "Vendor not found" });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, vendor.password);
+    if (!isMatch) {
+      return res
+        .status(400)
+        .json({ status: false, message: "Incorrect current password" });
+    }
+
+    vendor.password = await bcrypt.hash(newPassword, 10);
+    await vendor.save();
+
+    res
+      .status(200)
+      .json({ status: true, message: "Password changed successful" });
+  } catch (error) {
+    console.error("Change password error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };

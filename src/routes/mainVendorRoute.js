@@ -7,7 +7,21 @@ const upload = require("../middleware/uploadMiddleware");
 // Route to get all main vendors
 router.get("/", authMiddleware, mainVendorController.getMainVendors);
 
-// Route to create a main vendor
+// Auth Routes (Public)
+router.post("/signup", mainVendorController.signup);
+router.post("/login", mainVendorController.login);
+router.post("/forgot-password", mainVendorController.forgotPassword);
+router.post("/reset-password", mainVendorController.resetPassword);
+
+// Vendor specific routes
+router.get("/profile/:id", mainVendorController.getMainVendorProfile);
+router.post(
+  "/change-password",
+  authMiddleware,
+  mainVendorController.changePassword,
+);
+
+// Route to create a main vendor (Admin only)
 router.post(
   "/",
   authMiddleware,
