@@ -3,12 +3,21 @@ const Vendor = require("../models/vendor");
 
 exports.getNotifications = async (req, res) => {
   try {
-    const notifications = await Notification.find({
+    let notifications = await Notification.find({
       isRead: false,
       recipient: "admin",
     })
       .populate("userId", "name email")
       .sort({ createdAt: -1 });
+
+    // ensure senderName is filled so front-end can display easily
+    notifications = notifications.map((n) => {
+      const obj = n.toObject();
+      if (!obj.senderName || obj.senderName === "") {
+        obj.senderName = obj.userId?.name || "Unknown Vendor";
+      }
+      return obj;
+    });
 
     res.status(200).json({ status: true, notifications });
   } catch (error) {
@@ -57,6 +66,7 @@ exports.getVendorNotifications = async (req, res) => {
           await new Notification({
             userId,
             userModel,
+            senderName: user.name || "",
             title,
             message,
             recipient,
@@ -95,6 +105,7 @@ exports.getVendorNotifications = async (req, res) => {
           await new Notification({
             userId,
             userModel,
+            senderName: user.name || "",
             title,
             message:
               "Your subscription has ended. Please renew immediately to continue using the services.",
@@ -168,6 +179,7 @@ exports.createUpgradeRequest = async (req, res) => {
     const newNotification = new Notification({
       userId,
       userModel,
+      senderName: (req.user && req.user.name) || "",
       title: `Upgrade Request: ${type === "asset_upgrade" ? "Asset" : "Plan"}`,
       message,
       type,

@@ -96,9 +96,58 @@ exports.createMainVendor = async (req, res) => {
       endDate: planEndDate,
     });
 
-    // Send Email
+    // Send Email (HTML formatted)
     try {
-      const emailContent = `<h1>Welcome ${name}</h1><p>Your Main Vendor account has been created.</p><p>Email: ${email}</p><p>Password: ${plainPassword}</p>`;
+      const emailContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Main Vendor Account Created</title>
+      </head>
+      <body style="margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, sans-serif;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td align="center">
+              <table width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff; margin:40px 0; border-radius:8px; overflow:hidden;">
+                <tr>
+                  <td align="center" style="background:#F39C12; padding:25px; color:#ffffff;">
+                    <h1 style="margin:0; font-size:24px;">${process.env.COMPANY_NAME || "AuctionBilling"}</h1>
+                    <p style="margin:5px 0 0; font-size:14px;">Main Vendor Account Details</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:30px; color:#333333;">
+                    <h2 style="margin-top:0;">Hello ${name},</h2>
+                    <p>Welcome! Your Main Vendor account has been successfully created.</p>
+                    <p>Below are your login and plan details:</p>
+                    <table width="100%" cellpadding="8" cellspacing="0" style="background:#f8f9fa; border-radius:6px; margin-bottom:20px;">
+                      <tr>
+                        <td><strong>Email:</strong></td>
+                        <td>${email}</td>
+                      </tr>
+                      <tr>
+                        <td><strong>Password:</strong></td>
+                        <td>${plainPassword}</td>
+                      </tr>
+                    </table>
+                    <p>Your subscription plan is <strong>${planExists.name}</strong> and will expire on <strong>${planEndDate.toLocaleDateString()}</strong>.</p>
+                    <br/>
+                    <p>Regards,<br/>${process.env.COMPANY_NAME || "AuctionBilling"} Team</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="background:#f1f1f1; padding:20px; font-size:12px; color:#777;">
+                    <p style="margin:0;">© ${new Date().getFullYear()} ${process.env.COMPANY_NAME || "AuctionBilling"}. All rights reserved.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+      `;
       await sendEmail(email, "Main Vendor Account Created", emailContent);
     } catch (e) {
       console.error("Email error:", e);
@@ -139,10 +188,44 @@ exports.updateMainVendor = async (req, res) => {
         .json({ status: false, message: "Main vendor not found" });
     }
 
-    // Process plan upgrade approval if requested
+    // Notify Admin if requestedPlan is being set (upgrade/renewal request)
+    if (
+      updateData.requestedPlan &&
+      updateData.requestedPlan.toString() !==
+        vendorBeforeUpdate.requestedPlan?.toString()
+    ) {
+      const requestedPlanExists = await Plan.findById(updateData.requestedPlan);
+      if (requestedPlanExists) {
+        try {
+          await Notification.create({
+            userId: id,
+            userModel: "MainVendor",
+            senderName: vendorBeforeUpdate.name,
+            title: "Plan Renewal/Upgrade Request",
+            message: `Main Vendor ${vendorBeforeUpdate.name} has requested for ${requestedPlanExists.name} plan.`,
+            type: "plan_upgrade",
+            recipient: "admin",
+          });
+        } catch (e) {
+          console.error("Admin notification error:", e);
+        }
+      }
+    }
+
+    const wasPendingAndNowActive =
+      updateData.status &&
+      updateData.status === "Active" &&
+      vendorBeforeUpdate.status === "Pending";
+
+    let planToActivate = null;
+    let newPlanEndDate = null;
+
+    // Case 1: Plan Update/Upgrade Approval OR Renewal
+    // We allow it if plan is provided (even if same ID) to handle renewals
     if (
       updateData.plan &&
-      updateData.plan.toString() !== vendorBeforeUpdate.plan?.toString()
+      updateData.plan !== "null" &&
+      updateData.plan !== ""
     ) {
       const newPlan = await Plan.findById(updateData.plan);
       if (newPlan) {
@@ -166,22 +249,231 @@ exports.updateMainVendor = async (req, res) => {
         }
 
         updateData.planEndDate = planEndDate;
+        planToActivate = newPlan;
+        newPlanEndDate = planEndDate;
 
-        // Create new UserSubscription record
-        await UserSubscription.create({
-          userId: id,
-          subscriptionId: newPlan._id,
-          priceAtPurchase: newPlan.price,
-          featuresAtPurchase: newPlan.features || {},
-          startDate: new Date(),
-          endDate: planEndDate,
-        });
+        // Clear request fields when admin sets a plan
+        updateData.requestedPlan = null;
+        updateData.upgradeType = null;
+      }
+    }
+    // Case 2: Activation from Pending (First time approval)
+    else if (wasPendingAndNowActive) {
+      updateData.joinedDate = new Date();
+      const currentPlan = await Plan.findById(vendorBeforeUpdate.plan);
+      if (currentPlan) {
+        let planEndDate = new Date();
+        if (currentPlan.durationType === "year") {
+          planEndDate.setFullYear(
+            planEndDate.getFullYear() + (currentPlan.durationValue || 1),
+          );
+        } else {
+          planEndDate.setDate(
+            planEndDate.getDate() + 30 * (currentPlan.durationValue || 1),
+          );
+        }
+        updateData.planEndDate = planEndDate;
+        planToActivate = currentPlan;
+        newPlanEndDate = planEndDate;
       }
     }
 
     const updatedVendor = await MainVendor.findByIdAndUpdate(id, updateData, {
-      new: true,
-    });
+      returnDocument: "after",
+    }).populate("plan");
+
+    console.log(
+      `Update Main Vendor ${id}: status changed from ${vendorBeforeUpdate.status} to ${updateData.status || vendorBeforeUpdate.status}. Activation detected: ${wasPendingAndNowActive}. Plan to activate: ${planToActivate ? planToActivate.name || planToActivate._id : "none"}`,
+    );
+
+    // Create UserSubscription entry if plan changed or account activated
+    if (planToActivate) {
+      try {
+        await UserSubscription.create({
+          userId: id,
+          subscriptionId: planToActivate._id,
+          priceAtPurchase: planToActivate.price,
+          featuresAtPurchase: planToActivate.features || {},
+          startDate: new Date(),
+          endDate: newPlanEndDate,
+        });
+        console.log(
+          `UserSubscription stored successfully for Main Vendor ${id}`,
+        );
+      } catch (subErr) {
+        console.error(
+          `Failed to store UserSubscription for Main Vendor ${id}:`,
+          subErr,
+        );
+        // We don't necessarily want to fail the whole update if only the sub record failed,
+        // but it's important to know.
+      }
+    }
+
+    // send notification/email if there was a plan change or status activation
+    try {
+      const vendorObj = updatedVendor.toObject();
+      let notifyTitle = null;
+      let notifyMessage = null;
+      let emailSubject = null;
+      let emailHtml = null;
+
+      if (planToActivate && !wasPendingAndNowActive) {
+        notifyTitle = "Subscription Plan Updated";
+        notifyMessage = `Your subscription has been changed to ${planToActivate.name}.`;
+        emailSubject = "Your Subscription Plan Has Been Updated";
+        emailHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>Subscription Updated</title>
+          </head>
+          <body style="margin:0; padding:0; background-color:#F39C12; font-family:Arial, sans-serif;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center">
+                  <table width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff; margin:40px 0; border-radius:8px; overflow:hidden;">
+                    <tr>
+                      <td align="center" style="background:#F39C12; padding:25px; color:#ffffff;">
+                        <h1 style="margin:0; font-size:24px;">${process.env.COMPANY_NAME || "AuctionBilling"}</h1>
+                        <p style="margin:5px 0 0; font-size:14px;">Subscription Plan Updated</p>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:30px; color:#333333;">
+                        <h2 style="margin-top:0;">Hello ${vendorObj.name},</h2>
+                        <p>Your subscription plan has been successfully updated or renewed.</p>
+                        <p>Below are the details of your active subscription:</p>
+                        
+                        <table width="100%" cellpadding="8" cellspacing="0" style="background:#f8f9fa; border-radius:6px; margin-bottom:20px;">
+                          <tr>
+                            <td><strong>Updated Plan:</strong></td>
+                            <td>${planToActivate.name}</td>
+                          </tr>
+                          <tr>
+                            <td><strong>Price:</strong></td>
+                            <td>${planToActivate.price || "N/A"}</td>
+                          </tr>
+                          <tr>
+                            <td><strong>Expiry Date:</strong></td>
+                            <td>${newPlanEndDate.toLocaleDateString()}</td>
+                          </tr>
+                        </table>
+                        
+                        <p>Thank you for continuing with ${process.env.COMPANY_NAME || "AuctionBilling"}! You can manage your auctions and view your billing history via the link below.</p>
+
+                        <div style="text-align:center; margin:30px 0;">
+                          <a href="${process.env.CLIENT_URL || "http://localhost:5173"}" style="background:#F39C12; color:#ffffff; padding:12px 25px; text-decoration:none; border-radius:5px; font-weight:bold;">Go to Dashboard</a>
+                        </div>
+                        <br/>
+                        <p>Regards,<br/>${process.env.COMPANY_NAME || "AuctionBilling"} Team</p>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td align="center" style="background:#f1f1f1; padding:20px; font-size:12px; color:#777;">
+                        <p style="margin:0;">© ${new Date().getFullYear()} ${process.env.COMPANY_NAME || "AuctionBilling"}. All rights reserved.</p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </body>
+          </html>
+        `;
+      }
+
+      // Activation from pending?
+      if (wasPendingAndNowActive) {
+        notifyTitle = "Account Activated";
+        notifyMessage = "Your account status has been changed to Active.";
+        emailSubject = "Your Account Has Been Activated";
+
+        const planName = planToActivate
+          ? planToActivate.name
+          : updatedVendor.plan?.name || "Standard Plan";
+        const expiryStr = newPlanEndDate
+          ? newPlanEndDate.toLocaleDateString()
+          : updatedVendor.planEndDate
+            ? new Date(updatedVendor.planEndDate).toLocaleDateString()
+            : "N/A";
+
+        emailHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>Account Activated</title>
+          </head>
+          <body style="margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, sans-serif;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center">
+                  <table width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff; margin:40px 0; border-radius:8px; overflow:hidden;">
+                    <tr>
+                      <td align="center" style="background:#2ecc71; padding:25px; color:#ffffff;">
+                        <h1 style="margin:0; font-size:24px;">${process.env.COMPANY_NAME || "AuctionBilling"}</h1>
+                        <p style="margin:5px 0 0; font-size:14px;">Account Activated</p>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:30px; color:#333333;">
+                        <h2 style="margin-top:0;">Hello ${vendorObj.name},</h2>
+                        <p>Great news! Your Main Vendor account has been reviewed and successfully activated.</p>
+                        <p>You can now log in to your dashboard and start managing your auctions.</p>
+                        
+                        <div style="text-align:center; margin:30px 0;">
+                          <a href="${process.env.CLIENT_URL || "http://localhost:5173"}" style="background:#2ecc71; color:#ffffff; padding:12px 25px; text-decoration:none; border-radius:5px; font-weight:bold;">Login to Your Account</a>
+                        </div>
+
+                        <p>Details of your assigned plan:</p>
+                        <table width="100%" cellpadding="8" cellspacing="0" style="background:#f8f9fa; border-radius:6px; margin-bottom:20px;">
+                          <tr>
+                            <td><strong>Current Plan:</strong></td>
+                            <td>${planName}</td>
+                          </tr>
+                          <tr>
+                            <td><strong>Expiry Date:</strong></td>
+                            <td>${expiryStr}</td>
+                          </tr>
+                        </table>
+                        
+                        <p>If you have any questions, feel free to reply to this email.</p>
+                        <br/>
+                        <p>Regards,<br/>${process.env.COMPANY_NAME || "AuctionBilling"} Team</p>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td align="center" style="background:#f1f1f1; padding:20px; font-size:12px; color:#777;">
+                        <p style="margin:0;">© ${new Date().getFullYear()} ${process.env.COMPANY_NAME || "AuctionBilling"}. All rights reserved.</p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </body>
+          </html>
+        `;
+      }
+
+      if (notifyTitle && notifyMessage) {
+        await new Notification({
+          userId: id,
+          userModel: "MainVendor",
+          title: notifyTitle,
+          message: notifyMessage,
+          type: "plan_upgrade",
+          recipient: "main-vendor",
+        }).save();
+      }
+      if (emailSubject && emailHtml) {
+        await sendEmail(vendorObj.email, emailSubject, emailHtml);
+      }
+    } catch (notifyErr) {
+      console.error("Post-update notification/email error:", notifyErr);
+    }
 
     res.status(200).json({
       status: true,
@@ -200,7 +492,68 @@ exports.updateMainVendor = async (req, res) => {
 exports.deleteMainVendor = async (req, res) => {
   try {
     const { id } = req.params;
+    const vendor = await MainVendor.findById(id);
+    if (!vendor) {
+      return res
+        .status(404)
+        .json({ status: false, message: "Main vendor not found" });
+    }
+
     await MainVendor.findByIdAndDelete(id);
+
+    // optional email informing deletion
+    try {
+      const deleteEmail = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Account Deleted</title>
+        </head>
+        <body style="margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, sans-serif;">
+          <table width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td align="center">
+                <table width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff; margin:40px 0; border-radius:8px; overflow:hidden;">
+                  <tr>
+                    <td align="center" style="background:#e74c3c; padding:25px; color:#ffffff;">
+                      <h1 style="margin:0; font-size:24px;">${process.env.COMPANY_NAME || "AuctionBilling"}</h1>
+                      <p style="margin:5px 0 0; font-size:14px;">Account Deletion Notice</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:30px; color:#333333;">
+                      <h2 style="margin-top:0;">Hello ${vendor.name},</h2>
+                      <p>This is to inform you that your Main Vendor account has been deleted by the administrator.</p>
+                      
+                      <p>If you believe this was done in error or if you have questions regarding this action, please contact our support team immediately.</p>
+                      
+                      <p>Thank you for the time you spent with us.</p>
+                      <br/>
+                      <p>Regards,<br/>${process.env.COMPANY_NAME || "AuctionBilling"} Team</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="background:#f1f1f1; padding:20px; font-size:12px; color:#777;">
+                      <p style="margin:0;">© ${new Date().getFullYear()} ${process.env.COMPANY_NAME || "AuctionBilling"}. All rights reserved.</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+      await sendEmail(
+        vendor.email,
+        "Your Account Has Been Deleted",
+        deleteEmail,
+      );
+    } catch (emailErr) {
+      console.error("Deletion email error:", emailErr);
+    }
+
     res.status(200).json({ status: true, message: "Main vendor deleted" });
   } catch (error) {
     console.error("Delete main vendor error:", error);
@@ -250,12 +603,9 @@ exports.exportMainVendors = async (req, res) => {
 
 exports.getMainVendorPurchases = async (req, res) => {
   try {
-    const mainVendors = await MainVendor.find().select("_id");
-    const mainVendorIds = mainVendors.map((v) => v._id);
-
-    const purchases = await UserSubscription.find({
-      userId: { $in: mainVendorIds },
-    })
+    // Fetch all subscriptions and populate userId from MainVendor model.
+    // This allows us to filter for subscriptions that actually belong to MainVendors.
+    const purchases = await UserSubscription.find()
       .populate({
         path: "userId",
         model: "MainVendor",
@@ -264,7 +614,10 @@ exports.getMainVendorPurchases = async (req, res) => {
       .populate("subscriptionId", "name")
       .sort({ createdAt: -1 });
 
-    const formattedPurchases = purchases.map((sub) => {
+    // Filter to only include those where userId was successfully populated from MainVendor
+    const filteredPurchases = purchases.filter((sub) => sub.userId !== null);
+
+    const formattedPurchases = filteredPurchases.map((sub) => {
       const currentDate = new Date();
       const isExpired = new Date(sub.endDate) < currentDate;
       const currentSubStatus = isExpired
@@ -436,6 +789,7 @@ exports.signup = async (req, res) => {
       await Notification.create({
         userId: newMainVendor._id,
         userModel: "MainVendor",
+        senderName: name,
         title: "New Main Vendor Signup Request",
         message: `New Main Vendor ${name} (${email}) has requested access.`,
         type: "new_registration",
@@ -443,6 +797,73 @@ exports.signup = async (req, res) => {
       });
     } catch (e) {
       console.error("Notification error:", e);
+    }
+
+    // send acknowledgement email to user using vendor-style template
+    try {
+      const emailContent = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Subscription Request Received</title>
+  </head>
+  <body style="margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td align="center">
+          <table width="600" cellpadding="0" cellspacing="0" border="0" 
+                 style="background:#ffffff; margin:40px 0; border-radius:8px; overflow:hidden;">
+            <tr>
+              <td align="center" style="background:#f39c12; padding:25px; color:#ffffff;">
+                <h1 style="margin:0; font-size:24px;">${process.env.COMPANY_NAME || "AuctionBilling"}</h1>
+                <p style="margin:5px 0 0; font-size:14px;">Subscription Request</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:30px; color:#333333;">
+                <h2 style="margin-top:0;">Hello ${name},</h2>
+                <p>Thank you for choosing ${process.env.COMPANY_NAME || "AuctionBilling"}! Your subscription request has been received and is currently being processed.</p>
+                <p>Our administrator will review your application and activate your account soon.</p>
+                
+                <h3 style="margin-top:20px; margin-bottom:10px;">Request Details:</h3>
+                <table width="100%" cellpadding="8" cellspacing="0" style="background:#f8f9fa; border-radius:6px; margin-bottom:20px;">
+                  <tr>
+                    <td><strong>Email:</strong></td>
+                    <td>${email}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Assigned Plan:</strong></td>
+                    <td>${planExists.name || "Default Plan"}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Location:</strong></td>
+                    <td>${city}, ${state}</td>
+                  </tr>
+                </table>
+                
+                <p>We'll notify you once your account is active.</p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="background:#f1f1f1; padding:20px; font-size:12px; color:#777;">
+                <p style="margin:0;">© ${new Date().getFullYear()} ${process.env.COMPANY_NAME || "AuctionBilling"}. All rights reserved.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+  </html>
+        `;
+      await sendEmail(
+        email,
+        "Your Subscription Request Has Been Received",
+        emailContent,
+      );
+    } catch (emailErr) {
+      console.error("Signup acknowledgement email error:", emailErr);
     }
 
     res.status(201).json({
@@ -463,7 +884,7 @@ exports.forgotPassword = async (req, res) => {
     if (!vendor) {
       return res
         .status(404)
-        .json({ status: false, message: "Vendor not found" });
+        .json({ status: false, message: "Main vendor not found" });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -471,11 +892,52 @@ exports.forgotPassword = async (req, res) => {
     vendor.otpExpires = Date.now() + 10 * 60 * 1000; // 10 mins
     await vendor.save();
 
-    await sendEmail(
-      email,
-      "Password Reset OTP",
-      `Your OTP for password reset is ${otp}. Valid for 10 minutes.`,
-    );
+    const emailContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Password Reset OTP</title>
+      </head>
+      <body style="margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, sans-serif;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td align="center">
+              <table width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff; margin:40px 0; border-radius:8px; overflow:hidden;">
+                <tr>
+                  <td align="center" style="background:#F39C12; padding:25px; color:#ffffff;">
+                    <h1 style="margin:0; font-size:24px;">${process.env.COMPANY_NAME || "AuctionBilling"}</h1>
+                    <p style="margin:5px 0 0; font-size:14px;">Password Reset Request</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:30px; color:#333333;">
+                    <h2 style="margin-top:0;">Hello,</h2>
+                    <p>We received a request to reset your password. Use the OTP code below to proceed:</p>
+                    
+                    <div style="text-align:center; margin:30px 0;">
+                      <span style="background:#f8f9fa; border:2px dashed #F39C12; color:#F39C12; padding:15px 30px; font-size:28px; font-weight:bold; letter-spacing:5px; border-radius:5px;">${otp}</span>
+                    </div>
+
+                    <p style="color:#777; font-size:14px;">This code is valid for <strong>10 minutes</strong>. If you did not request a password reset, please ignore this email.</p>
+                    <br/>
+                    <p>Regards,<br/>${process.env.COMPANY_NAME || "AuctionBilling"} Team</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="background:#f1f1f1; padding:20px; font-size:12px; color:#777;">
+                    <p style="margin:0;">© ${new Date().getFullYear()} ${process.env.COMPANY_NAME || "AuctionBilling"}. All rights reserved.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+
+    await sendEmail(email, "Password Reset OTP", emailContent);
 
     res.status(200).json({ status: true, message: "OTP sent to email" });
   } catch (error) {
@@ -520,7 +982,7 @@ exports.getMainVendorProfile = async (req, res) => {
     if (!vendor) {
       return res
         .status(404)
-        .json({ status: false, message: "Vendor not found" });
+        .json({ status: false, message: "Main vendor not found" });
     }
 
     const vendorData = vendor.toObject();
@@ -540,7 +1002,7 @@ exports.changePassword = async (req, res) => {
     if (!vendor) {
       return res
         .status(404)
-        .json({ status: false, message: "Vendor not found" });
+        .json({ status: false, message: "Main vendor not found" });
     }
 
     const isMatch = await bcrypt.compare(currentPassword, vendor.password);

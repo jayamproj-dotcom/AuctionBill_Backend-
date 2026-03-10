@@ -35,6 +35,10 @@ const notificationSchema = new mongoose.Schema(
       enum: ["admin", "vendor", "main-vendor"],
       default: "admin",
     },
+    senderName: {
+      type: String,
+      default: "",
+    },
     isRead: {
       type: Boolean,
       default: false,

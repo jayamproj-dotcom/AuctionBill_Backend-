@@ -201,6 +201,7 @@ exports.signup = async (req, res) => {
       const adminNotification = new Notification({
         userId: newVendor._id,
         userModel: "Vendor",
+        senderName: name,
         title: "New Vendor Registration",
         message: `${name} has requested for ${planExists.name} plan.`,
         type: "new_registration",
@@ -650,6 +651,7 @@ exports.updateVendor = async (req, res) => {
           const adminNotification = new Notification({
             userId: vendor._id,
             userModel: "Vendor",
+            senderName: vendor.name,
             title: "Plan Upgrade Request",
             message: `${vendor.name} has requested an upgrade to ${reqPlanExists.name} plan.`,
             type: "plan_upgrade",
@@ -725,6 +727,7 @@ exports.updateVendor = async (req, res) => {
           await new Notification({
             userId: vendor._id,
             userModel: "Vendor",
+            senderName: vendor.name,
             title: notifTitle,
             message: notifMessage,
             type: "plan_upgrade",
