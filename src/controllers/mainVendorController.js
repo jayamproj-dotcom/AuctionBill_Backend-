@@ -1172,3 +1172,171 @@ exports.getTransactionHistory = async (req, res) => {
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
+
+exports.getCommissionRecords = async (req, res) => {
+  try {
+    const mainVendorId = req.user.id;
+    const { branchId, startDate, endDate } = req.query;
+
+    let vendorQuery = { mainVendorId };
+    if (branchId && branchId !== "all") {
+      vendorQuery._id = branchId;
+    }
+
+    const branches = await Vendor.find(vendorQuery).select("_id name");
+    const branchIds = branches.map((b) => b._id);
+
+    let transactionQuery = { vendorId: { $in: branchIds } };
+    
+    // Add date filtering if provided
+    if (startDate && endDate) {
+      transactionQuery.createdAt = {
+        $gte: new Date(new Date(startDate).setHours(0, 0, 0, 0)),
+        $lte: new Date(new Date(endDate).setHours(23, 59, 59, 999))
+      };
+    } else if (startDate) {
+      transactionQuery.createdAt = {
+        $gte: new Date(new Date(startDate).setHours(0, 0, 0, 0))
+      };
+    } else if (endDate) {
+      transactionQuery.createdAt = {
+        $lte: new Date(new Date(endDate).setHours(23, 59, 59, 999))
+      };
+    }
+
+    const transactions = await Transaction.find(transactionQuery)
+      .populate("vendorId", "name")
+      .populate("sellerId", "name")
+      .populate("productId", "name")
+      .sort({ createdAt: -1 });
+
+    let totalCommission = 0;
+    const formattedRecords = transactions.map((t) => {
+      totalCommission += t.commissionAmount || 0;
+      return {
+        id: t._id,
+        date: t.date,
+        branch: t.vendorId?.name || "N/A",
+        seller: t.sellerId?.name || "N/A",
+        productName: t.productId?.name || "N/A",
+        saleAmount: t.finalAmount,
+        commissionPercent: t.commissionPercent || 0,
+        amount: t.commissionAmount || 0,
+      };
+    });
+
+    res.status(200).json({ 
+      status: true, 
+      commissions: formattedRecords,
+      totalCommission
+    });
+  } catch (error) {
+    console.error("Get commission records error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.getDashboardSummary = async (req, res) => {
+  try {
+    const mainVendorId = req.user.id;
+    const { branchId, startDate, endDate, date } = req.query;
+
+    let vendorQuery = { mainVendorId };
+    if (branchId && branchId !== "all") {
+      vendorQuery._id = branchId;
+    }
+
+    const branches = await Vendor.find(vendorQuery).select("_id name");
+    const branchIds = branches.map((b) => b._id);
+    const totalBranches = branchIds.length;
+
+    // Build common date filter
+    let dateFilter = {};
+    if (date) {
+      dateFilter = {
+        $gte: new Date(new Date(date).setHours(0, 0, 0, 0)),
+        $lte: new Date(new Date(date).setHours(23, 59, 59, 999)),
+      };
+    } else if (startDate && endDate) {
+      dateFilter = {
+        $gte: new Date(new Date(startDate).setHours(0, 0, 0, 0)),
+        $lte: new Date(new Date(endDate).setHours(23, 59, 59, 999)),
+      };
+    } else if (startDate) {
+      dateFilter = {
+        $gte: new Date(new Date(startDate).setHours(0, 0, 0, 0)),
+      };
+    } else if (endDate) {
+      dateFilter = {
+        $lte: new Date(new Date(endDate).setHours(23, 59, 59, 999)),
+      };
+    }
+
+    const sellerQuery = { vendorId: { $in: branchIds } };
+    const buyerQuery = { vendorId: { $in: branchIds } };
+    const transactionQuery = { vendorId: { $in: branchIds } };
+
+    if (Object.keys(dateFilter).length > 0) {
+      sellerQuery.createdAt = dateFilter;
+      buyerQuery.createdAt = dateFilter;
+      transactionQuery.createdAt = dateFilter;
+    }
+
+    const [totalSellers, totalBuyers, transactions] = await Promise.all([
+      Seller.countDocuments(sellerQuery),
+      Buyer.countDocuments(buyerQuery),
+      Transaction.find(transactionQuery).populate("sellerId buyerId vendorId productId").sort({ createdAt: -1 }),
+    ]);
+
+    let totalSales = 0;
+    let totalCommission = 0;
+    let todayAuctions = 0; // Number of unique transactions for today or selected date
+    let totalQty = 0;
+    let totalPayIn = 0;
+    let totalPayOut = 0;
+
+    const recentTransactions = transactions.slice(0, 5).map(t => ({
+      _id: t._id,
+      date: t.date || t.createdAt,
+      productName: t.productId?.name || t.productName || "N/A",
+      sellerName: t.sellerId?.name || t.sellerName || "N/A",
+      buyerName: t.buyerId?.name || t.buyerName || "N/A",
+      branchName: t.vendorId?.name || "N/A",
+      quantity: t.quantity,
+      unit: t.unit || "qty",
+      finalAmount: t.finalAmount,
+      commissionAmount: t.commissionAmount
+    }));
+
+    transactions.forEach(t => {
+      totalSales += t.finalAmount || 0;
+      totalCommission += t.commissionAmount || 0;
+      todayAuctions += 1;
+      totalQty += t.quantity || 0;
+      // In this system, commission belongs to the vendor. Pay in/out logic:
+      // totalPayIn is from buyers (finalAmount)
+      totalPayIn += t.finalAmount || 0;
+      // totalPayOut is to sellers (netAmount)
+      totalPayOut += t.netAmount || 0;
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalBranches,
+        totalSellers,
+        totalBuyers,
+        totalSales,
+        totalCommission,
+        todayAuctions,
+        totalQty,
+        totalPayIn,
+        totalPayOut,
+        recentTransactions
+      }
+    });
+  } catch (error) {
+    console.error("Dashboard summary error:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
