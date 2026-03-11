@@ -8,6 +8,7 @@ const sendEmail = require("../utils/sendEmail");
 const jwt = require("jsonwebtoken");
 const Vendor = require("../models/vendor");
 const Seller = require("../models/seller");
+const Buyer = require("../models/buyer");
 
 function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
@@ -1070,6 +1071,43 @@ exports.getBranches = async (req, res) => {
     res.status(200).json({ status: true, vendors: branches });
   } catch (error) {
     console.error("Get main vendor branches error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.getBuyers = async (req, res) => {
+  try {
+    const mainVendorId = req.user.id;
+    const { branchId } = req.query;
+
+    let vendorQuery = { mainVendorId };
+    if (branchId && branchId !== "all") {
+      vendorQuery._id = branchId;
+    }
+
+    const branches = await Vendor.find(vendorQuery).select("_id name");
+    const branchIds = branches.map((b) => b._id);
+
+    const buyers = await Buyer.find({ vendorId: { $in: branchIds } })
+      .populate("vendorId", "name")
+      .sort({ createdAt: -1 });
+
+    const formattedBuyers = buyers.map((b) => ({
+      id: b._id,
+      name: b.name,
+      email: b.email,
+      phone: b.contact,
+      branch: b.vendorId?.name || "N/A",
+      branchId: b.vendorId?._id,
+      city: b.city,
+      state: b.state,
+      address: b.address,
+      status: b.status,
+    }));
+
+    res.status(200).json({ status: true, buyers: formattedBuyers });
+  } catch (error) {
+    console.error("Get buyers error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };

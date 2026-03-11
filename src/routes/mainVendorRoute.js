@@ -63,4 +63,7 @@ router.get("/branches", authMiddleware, mainVendorController.getBranches);
 // Route to get all sellers under a main vendor's branches
 router.get("/sellers", authMiddleware, mainVendorController.getSellers);
 
+// Route to get all buyers under a main vendor's branches
+router.get("/buyers", authMiddleware, mainVendorController.getBuyers);
+
 module.exports = router;
