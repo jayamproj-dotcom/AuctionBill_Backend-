@@ -6,6 +6,8 @@ const ExcelJS = require("exceljs");
 const Notification = require("../models/notification");
 const sendEmail = require("../utils/sendEmail");
 const jwt = require("jsonwebtoken");
+const Vendor = require("../models/vendor");
+const Seller = require("../models/seller");
 
 function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
@@ -1020,6 +1022,54 @@ exports.changePassword = async (req, res) => {
       .json({ status: true, message: "Password changed successful" });
   } catch (error) {
     console.error("Change password error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.getSellers = async (req, res) => {
+  try {
+    const mainVendorId = req.user.id;
+    const { branchId } = req.query;
+
+    let vendorQuery = { mainVendorId };
+    if (branchId && branchId !== "all") {
+      vendorQuery._id = branchId;
+    }
+
+    const branches = await Vendor.find(vendorQuery).select("_id name");
+    const branchIds = branches.map((b) => b._id);
+
+    const sellers = await Seller.find({ vendorId: { $in: branchIds } })
+      .populate("vendorId", "name")
+      .sort({ createdAt: -1 });
+
+    const formattedSellers = sellers.map((s) => ({
+      id: s._id,
+      name: s.name,
+      email: s.email,
+      phone: s.contact,
+      branch: s.vendorId?.name || "N/A",
+      branchId: s.vendorId?._id,
+      city: s.city,
+      state: s.state,
+      address: s.address,
+      status: s.status,
+    }));
+
+    res.status(200).json({ status: true, sellers: formattedSellers });
+  } catch (error) {
+    console.error("Get sellers error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.getBranches = async (req, res) => {
+  try {
+    const mainVendorId = req.user.id;
+    const branches = await Vendor.find({ mainVendorId }).sort({ name: 1 });
+    res.status(200).json({ status: true, vendors: branches });
+  } catch (error) {
+    console.error("Get main vendor branches error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
