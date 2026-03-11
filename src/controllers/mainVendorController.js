@@ -9,6 +9,7 @@ const jwt = require("jsonwebtoken");
 const Vendor = require("../models/vendor");
 const Seller = require("../models/seller");
 const Buyer = require("../models/buyer");
+const Transaction = require("../models/transaction");
 
 function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
@@ -1108,6 +1109,66 @@ exports.getBuyers = async (req, res) => {
     res.status(200).json({ status: true, buyers: formattedBuyers });
   } catch (error) {
     console.error("Get buyers error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.getTransactionHistory = async (req, res) => {
+  try {
+    const mainVendorId = req.user.id;
+    const { branchId, startDate, endDate } = req.query;
+
+    let vendorQuery = { mainVendorId };
+    if (branchId && branchId !== "all") {
+      vendorQuery._id = branchId;
+    }
+
+    const branches = await Vendor.find(vendorQuery).select("_id name");
+    const branchIds = branches.map((b) => b._id);
+
+    let transactionQuery = { vendorId: { $in: branchIds } };
+    
+    // Add date filtering if provided
+    if (startDate && endDate) {
+      transactionQuery.createdAt = {
+        $gte: new Date(new Date(startDate).setHours(0, 0, 0, 0)),
+        $lte: new Date(new Date(endDate).setHours(23, 59, 59, 999))
+      };
+    } else if (startDate) {
+      transactionQuery.createdAt = {
+        $gte: new Date(new Date(startDate).setHours(0, 0, 0, 0))
+      };
+    } else if (endDate) {
+      transactionQuery.createdAt = {
+        $lte: new Date(new Date(endDate).setHours(23, 59, 59, 999))
+      };
+    }
+
+    const transactions = await Transaction.find(transactionQuery)
+      .populate("vendorId", "name")
+      .populate("sellerId", "name")
+      .populate("buyerId", "name")
+      .populate("productId", "name")
+      .sort({ createdAt: -1 });
+
+    const formattedTransactions = transactions.map((t) => ({
+      id: t._id,
+      date: t.date,
+      branch: t.vendorId?.name || "N/A",
+      branchId: t.vendorId?._id,
+      sellerName: t.sellerId?.name || "N/A",
+      buyerName: t.buyerId?.name || t.buyerName || "N/A",
+      productName: t.productId?.name || "N/A",
+      quantity: t.quantity,
+      rate: t.rate,
+      totalAmount: t.finalAmount,
+      commissionAmount: t.commissionAmount,
+      netAmount: t.netAmount,
+    }));
+
+    res.status(200).json({ status: true, transactions: formattedTransactions });
+  } catch (error) {
+    console.error("Get transaction history error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
