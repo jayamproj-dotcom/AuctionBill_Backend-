@@ -1151,20 +1151,31 @@ exports.getTransactionHistory = async (req, res) => {
       .populate("productId", "name")
       .sort({ createdAt: -1 });
 
-    const formattedTransactions = transactions.map((t) => ({
-      id: t._id,
-      date: t.date,
-      branch: t.vendorId?.name || "N/A",
-      branchId: t.vendorId?._id,
-      sellerName: t.sellerId?.name || "N/A",
-      buyerName: t.buyerId?.name || t.buyerName || "N/A",
-      productName: t.productId?.name || "N/A",
-      quantity: t.quantity,
-      rate: t.rate,
-      totalAmount: t.finalAmount,
-      commissionAmount: t.commissionAmount,
-      netAmount: t.netAmount,
-    }));
+    const formattedTransactions = transactions.map((t) => {
+      let unit = "qty";
+      if (t.productId && t.productId.variants && t.variantId) {
+        const variant = t.productId.variants.find(v => v._id && v._id.toString() === t.variantId.toString());
+        if (variant && variant.unit) {
+          unit = variant.unit;
+        }
+      }
+
+      return {
+        id: t._id,
+        date: t.date,
+        branch: t.vendorId?.name || "N/A",
+        branchId: t.vendorId?._id,
+        sellerName: t.sellerId?.name || "N/A",
+        buyerName: t.buyerId?.name || t.buyerName || "N/A",
+        productName: t.productId?.name || "N/A",
+        quantity: t.quantity,
+        unit: unit,
+        rate: t.rate,
+        totalAmount: t.finalAmount,
+        commissionAmount: t.commissionAmount,
+        netAmount: t.netAmount,
+      };
+    });
 
     res.status(200).json({ status: true, transactions: formattedTransactions });
   } catch (error) {
@@ -1295,18 +1306,27 @@ exports.getDashboardSummary = async (req, res) => {
     let totalPayIn = 0;
     let totalPayOut = 0;
 
-    const recentTransactions = transactions.slice(0, 5).map(t => ({
-      _id: t._id,
-      date: t.date || t.createdAt,
-      productName: t.productId?.name || t.productName || "N/A",
-      sellerName: t.sellerId?.name || t.sellerName || "N/A",
-      buyerName: t.buyerId?.name || t.buyerName || "N/A",
-      branchName: t.vendorId?.name || "N/A",
-      quantity: t.quantity,
-      unit: t.unit || "qty",
-      finalAmount: t.finalAmount,
-      commissionAmount: t.commissionAmount
-    }));
+    const recentTransactions = transactions.slice(0, 5).map(t => {
+      let unit = "qty";
+      if (t.productId && t.productId.variants && t.variantId) {
+        const variant = t.productId.variants.find(v => v._id && v._id.toString() === t.variantId.toString());
+        if (variant && variant.unit) {
+          unit = variant.unit;
+        }
+      }
+      return {
+        _id: t._id,
+        date: t.date || t.createdAt,
+        productName: t.productId?.name || t.productName || "N/A",
+        sellerName: t.sellerId?.name || t.sellerName || "N/A",
+        buyerName: t.buyerId?.name || t.buyerName || "N/A",
+        branchName: t.vendorId?.name || "N/A",
+        quantity: t.quantity,
+        unit: unit,
+        finalAmount: t.finalAmount,
+        commissionAmount: t.commissionAmount
+      };
+    });
 
     transactions.forEach(t => {
       totalSales += t.finalAmount || 0;
