@@ -412,7 +412,7 @@ exports.updateMainVendor = async (req, res) => {
                 <td align="center">
                   <table width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff; margin:40px 0; border-radius:8px; overflow:hidden;">
                     <tr>
-                      <td align="center" style="background:#2ecc71; padding:25px; color:#ffffff;">
+                      <td align="center" style="background:#F39C12; padding:25px; color:#ffffff;">
                         <h1 style="margin:0; font-size:24px;">${process.env.COMPANY_NAME || "AuctionBilling"}</h1>
                         <p style="margin:5px 0 0; font-size:14px;">Account Activated</p>
                       </td>
@@ -424,7 +424,7 @@ exports.updateMainVendor = async (req, res) => {
                         <p>You can now log in to your dashboard and start managing your auctions.</p>
                         
                         <div style="text-align:center; margin:30px 0;">
-                          <a href="${process.env.CLIENT_URL || "http://localhost:5173"}" style="background:#2ecc71; color:#ffffff; padding:12px 25px; text-decoration:none; border-radius:5px; font-weight:bold;">Login to Your Account</a>
+                          <a href="${process.env.CLIENT_URL || "http://localhost:5173"}" style="background:#F39C12; color:#ffffff; padding:12px 25px; text-decoration:none; border-radius:5px; font-weight:bold;">Login to Your Account</a>
                         </div>
 
                         <p>Details of your assigned plan:</p>
