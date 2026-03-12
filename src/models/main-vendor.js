@@ -29,6 +29,8 @@ const mainVendorSchema = new mongoose.Schema(
     // deletedAt: { type: Date },
     otp: { type: String },
     otpExpires: { type: Date },
+    sessionId: { type: String },
+    lastActive: { type: Date },
   },
   { timestamps: true },
 );

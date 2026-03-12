@@ -28,6 +28,8 @@ const vendorSchema = new mongoose.Schema(
     deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
     // isDeleted: { type: Boolean, default: false },
     // deletedAt: { type: Date },
+    sessionId: { type: String },
+    lastActive: { type: Date },
   },
   { timestamps: true },
 );

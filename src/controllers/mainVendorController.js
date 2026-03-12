@@ -10,6 +10,7 @@ const Vendor = require("../models/vendor");
 const Seller = require("../models/seller");
 const Buyer = require("../models/buyer");
 const Transaction = require("../models/transaction");
+const crypto = require("crypto");
 
 function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
@@ -798,11 +799,33 @@ exports.login = async (req, res) => {
       });
     }
 
+    const INACTIVITY_LIMIT = 5 * 60 * 1000;
+
+    if (mainVendor.sessionId && mainVendor.lastActive) {
+      const now = new Date();
+      const lastActive = new Date(mainVendor.lastActive);
+      const isActive = now - lastActive < INACTIVITY_LIMIT;
+
+      if (isActive) {
+        return res.status(401).json({
+          status: false,
+          message: "User is already logged in on another device/session.",
+        });
+      }
+      // If inactive more than 5 min → old session is effectively dead
+      mainVendor.sessionId = null;
+    }
+
+    const sessionId = crypto.randomBytes(16).toString("hex");
     const token = jwt.sign(
-      { id: mainVendor._id, role: "main-vendor" },
+      { id: mainVendor._id, role: "main-vendor", sessionId },
       process.env.JWT_SECRET,
       { expiresIn: "1d" },
     );
+
+    mainVendor.sessionId = sessionId;
+    mainVendor.lastActive = new Date();
+    await mainVendor.save();
 
     const vendorData = mainVendor.toObject();
     delete vendorData.password;
@@ -1444,3 +1467,39 @@ exports.getDashboardSummary = async (req, res) => {
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
+exports.logout = async (req, res) => {
+  try {
+    const vendor = await MainVendor.findById(req.user.id);
+    if (vendor) {
+      vendor.sessionId = undefined;
+      vendor.lastActive = undefined;
+      await vendor.save();
+    }
+    res.status(200).json({ status: true, message: "Logout successful" });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.heartbeat = async (req, res) => {
+  res.status(200).json({ status: true, message: "Heartbeat successful" });
+};
+
+exports.handleBrowserClose = async (req, res) => {
+  console.log(`Handling browser-close for main-vendor: ${req.user.id}`);
+  try {
+    const mainVendor = await MainVendor.findById(req.user.id);
+    if (mainVendor) {
+      mainVendor.sessionId = null;
+      mainVendor.lastActive = null;
+      await mainVendor.save();
+    }
+    res.status(200).json({ status: true });
+  } catch (error) {
+    console.error("Browser close error:", error);
+    res.status(500).json({ status: false });
+  }
+};
+

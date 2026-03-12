@@ -12,9 +12,12 @@ router.post("/signup", mainVendorController.signup);
 router.post("/login", mainVendorController.login);
 router.post("/forgot-password", mainVendorController.forgotPassword);
 router.post("/reset-password", mainVendorController.resetPassword);
+router.post("/logout", authMiddleware, mainVendorController.logout);
+router.post("/heartbeat", authMiddleware, mainVendorController.heartbeat);
+router.post("/browser-close", authMiddleware, mainVendorController.handleBrowserClose);
 
 // Vendor specific routes
-router.get("/profile/:id", mainVendorController.getMainVendorProfile);
+router.get("/profile/:id", authMiddleware, mainVendorController.getMainVendorProfile);
 router.post(
   "/change-password",
   authMiddleware,

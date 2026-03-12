@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const Admin = require("../models/admin");
 const ExcelJS = require("exceljs");
 const Notification = require("../models/notification");
+const crypto = require("crypto");
 
 function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
@@ -55,12 +56,39 @@ exports.login = async (req, res) => {
       });
     }
 
+    const INACTIVITY_LIMIT = 5 * 60 * 1000;
+
+    if (vendorBranch.sessionId && vendorBranch.lastActive) {
+      const now = new Date();
+      const lastActive = new Date(vendorBranch.lastActive);
+      const isActive = now - lastActive < INACTIVITY_LIMIT;
+
+      if (isActive) {
+        return res.status(401).json({
+          status: false,
+          message: "User is already logged in on another device/session.",
+        });
+      }
+      // If inactive more than 5 min → old session is effectively dead
+      vendorBranch.sessionId = null;
+    }
+
     // 4. Generate JWT token (role: vendor)
+    const sessionId = crypto.randomBytes(16).toString("hex");
     const token = jwt.sign(
-      { id: vendorBranch._id, role: "vendor", mainVendorId: mainVendor._id },
+      {
+        id: vendorBranch._id,
+        role: "vendor",
+        mainVendorId: mainVendor._id,
+        sessionId,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "1d" },
     );
+
+    vendorBranch.sessionId = sessionId;
+    vendorBranch.lastActive = new Date();
+    await vendorBranch.save();
 
     const vendorData = vendorBranch.toObject();
 
@@ -343,3 +371,39 @@ exports.exportVendors = async (req, res) => {
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
+
+exports.logout = async (req, res) => {
+  try {
+    const branch = await Vendor.findById(req.user.id);
+    if (branch) {
+      branch.sessionId = undefined;
+      branch.lastActive = undefined;
+      await branch.save();
+    }
+    res.status(200).json({ status: true, message: "Logout successful" });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.heartbeat = async (req, res) => {
+  res.status(200).json({ status: true, message: "Heartbeat successful" });
+};
+
+exports.handleBrowserClose = async (req, res) => {
+  console.log(`Handling browser-close for vendor branch: ${req.user.id}`);
+  try {
+    const vendor = await Vendor.findById(req.user.id);
+    if (vendor) {
+      vendor.sessionId = null;
+      vendor.lastActive = null;
+      await vendor.save();
+    }
+    res.status(200).json({ status: true });
+  } catch (error) {
+    console.error("Browser close error:", error);
+    res.status(500).json({ status: false });
+  }
+};
+

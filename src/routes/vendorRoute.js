@@ -6,6 +6,9 @@ const upload = require("../middleware/uploadMiddleware");
 
 // Public routes
 router.post("/login", vendorController.login);
+router.post("/logout", authMiddleware, vendorController.logout);
+router.post("/heartbeat", authMiddleware, vendorController.heartbeat);
+router.post("/browser-close", authMiddleware, vendorController.handleBrowserClose);
 
 // Protected routes (Admin only)
 router.use(authMiddleware);

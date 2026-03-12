@@ -9,6 +9,9 @@ const adminController = require('../controllers/adminController');
 router.post("/login", adminController.login);
 router.post("/forgot-password", adminController.forgotPassword);
 router.post("/reset-password", adminController.resetPassword);
+router.post("/logout", authMiddleware, adminController.logout);
+router.post("/heartbeat", authMiddleware, adminController.heartbeat);
+router.post("/browser-close", authMiddleware, adminController.handleBrowserClose);
 
 //Admin Profile Update
 router.put("/update-profile", authMiddleware, roleMiddleware("admin"), adminController.updateProfie);
