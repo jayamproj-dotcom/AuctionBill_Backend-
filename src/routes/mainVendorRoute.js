@@ -57,6 +57,13 @@ router.get(
   mainVendorController.getMainVendorPurchasesById,
 );
 
+// Route to get all main vendor purchases export
+router.post(
+  "/purchases/export",
+  authMiddleware,
+  mainVendorController.exportMainVendorPurchases,
+);
+
 // Route to get all branches under a main vendor
 router.get("/branches", authMiddleware, mainVendorController.getBranches);
 
