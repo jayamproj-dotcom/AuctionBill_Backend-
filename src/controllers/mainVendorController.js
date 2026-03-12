@@ -675,6 +675,90 @@ exports.getMainVendorPurchasesById = async (req, res) => {
   }
 };
 
+exports.exportMainVendorPurchases = async (req, res) => {
+  try {
+    const { from, to, search } = req.body;
+
+    let query = {};
+    if (from && to) {
+      query.startDate = {
+        $gte: new Date(new Date(from).setHours(0, 0, 0, 0)),
+        $lte: new Date(new Date(to).setHours(23, 59, 59, 999)),
+      };
+    } else if (from) {
+      query.startDate = { $gte: new Date(new Date(from).setHours(0, 0, 0, 0)) };
+    } else if (to) {
+      query.startDate = { $lte: new Date(new Date(to).setHours(23, 59, 59, 999)) };
+    }
+
+    const purchases = await UserSubscription.find(query)
+      .populate({
+        path: "userId",
+        model: "MainVendor",
+        select: "name email phone",
+      })
+      .populate("subscriptionId", "name")
+      .sort({ createdAt: -1 });
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Purchase History");
+
+    worksheet.columns = [
+      { header: "Main Vendor Name", key: "vendorName", width: 25 },
+      { header: "Email", key: "email", width: 30 },
+      { header: "Phone", key: "phone", width: 15 },
+      { header: "Plan", key: "plan", width: 15 },
+      { header: "Price", key: "price", width: 15 },
+      { header: "Status", key: "status", width: 10 },
+      { header: "Purchase Date", key: "startDate", width: 20 },
+      { header: "Expiry Date", key: "endDate", width: 20 },
+      { header: "Transaction ID", key: "transactionId", width: 25 },
+    ];
+
+    purchases.forEach((sub) => {
+      // Only include if userId is a valid MainVendor
+      if (sub.userId) {
+        let matchesSearch = true;
+        if (search) {
+          const s = search.toLowerCase();
+          matchesSearch =
+            sub.userId.name?.toLowerCase().includes(s) ||
+            sub.subscriptionId?.name?.toLowerCase().includes(s) ||
+            sub.userId.email?.toLowerCase().includes(s);
+        }
+
+        if (matchesSearch) {
+          worksheet.addRow({
+            vendorName: sub.userId.name || "N/A",
+            email: sub.userId.email || "N/A",
+            phone: sub.userId.phone || "N/A",
+            plan: sub.subscriptionId?.name || "N/A",
+            price: sub.priceAtPurchase || 0,
+            status: new Date(sub.endDate) < new Date() ? "Expired" : "Active",
+            startDate: sub.startDate ? new Date(sub.startDate).toLocaleDateString() : "N/A",
+            endDate: sub.endDate ? new Date(sub.endDate).toLocaleDateString() : "N/A",
+            transactionId: `TXN_${sub._id.toString().slice(-6).toUpperCase()}`,
+          });
+        }
+      }
+    });
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=purchase_history.xlsx",
+    );
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Purchase history export error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
 // --- AUTH METHODS ---
 
 exports.login = async (req, res) => {
