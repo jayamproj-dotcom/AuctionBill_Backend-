@@ -2,10 +2,13 @@ const mongoose = require("mongoose");
 
 const notificationSchema = new mongoose.Schema(
   {
-    vendorId: {
+    userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Vendor",
-      required: true,
+      refPath: "userModel",
+    },
+    userModel: {
+      type: String,
+      enum: ["Vendor", "MainVendor", "Admin"],
     },
     title: {
       type: String,
@@ -22,14 +25,19 @@ const notificationSchema = new mongoose.Schema(
         "plan_upgrade",
         "new_registration",
         "subscription_alert",
+        "system",
         "other",
       ],
       default: "other",
     },
     recipient: {
       type: String,
-      enum: ["admin", "vendor"],
+      enum: ["admin", "vendor", "main-vendor"],
       default: "admin",
+    },
+    senderName: {
+      type: String,
+      default: "",
     },
     isRead: {
       type: Boolean,

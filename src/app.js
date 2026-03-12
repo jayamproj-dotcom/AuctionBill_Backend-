@@ -15,8 +15,11 @@ app.get("/api", (req, res) => {
 //Admin Routes
 app.use("/api/admin", require("./routes/adminRoute"));
 
+//Main Vendor Routes
+app.use("/api/main-vendor", require("./routes/mainVendorRoute"));
+
 //Subscription Routes
-app.use("/api/subscription", require("./routes/subscriptions.Route"));
+app.use("/api/subscription", require("./routes/subscriptionsRoute"));
 
 //Vendor Routes
 app.use("/api/vendor", require("./routes/vendorRoute"));
@@ -41,5 +44,8 @@ app.use("/api/auction", require("./routes/auctionRoute"));
 
 //Dashboard Routes
 app.use("/api/dashboard", require("./routes/dashboardRoute"));
+
+//Billing Routes
+app.use("/api/billing", require("./routes/billingRoutes"));
 
 module.exports = app;

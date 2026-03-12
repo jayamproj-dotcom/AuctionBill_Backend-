@@ -1,22 +1,21 @@
 const mongoose = require("mongoose");
 
-const vendorSchema = new mongoose.Schema(
+const mainVendorSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
-    email: { type: String, unique: true, sparse: true },
-    phone: { type: String },
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    phone: { type: String, required: true },
+    profilePic: { type: String },
     address: { type: String },
     city: { type: String },
     state: { type: String },
-    branchId: { type: String },
-    mainVendorId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "MainVendor",
-      required: true,
-    },
+    plan: { type: mongoose.Schema.Types.ObjectId, ref: "Plan", required: true },
+    requestedPlan: { type: mongoose.Schema.Types.ObjectId, ref: "Plan" },
+    upgradeType: { type: String, enum: ["from_today", "after_current"] },
     status: {
       type: String,
-      enum: ["Active", "Inactive"],
+      enum: ["Active", "Inactive", "Pending"],
       default: "Active",
     },
     joinedDate: { type: Date, default: Date.now },
@@ -28,8 +27,10 @@ const vendorSchema = new mongoose.Schema(
     deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
     // isDeleted: { type: Boolean, default: false },
     // deletedAt: { type: Date },
+    otp: { type: String },
+    otpExpires: { type: Date },
   },
   { timestamps: true },
 );
 
-module.exports = mongoose.model("Vendor", vendorSchema);
+module.exports = mongoose.model("MainVendor", mainVendorSchema);
