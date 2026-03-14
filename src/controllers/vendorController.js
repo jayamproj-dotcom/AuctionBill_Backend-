@@ -4,7 +4,10 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const Admin = require("../models/admin");
 const ExcelJS = require("exceljs");
+const Session = require("../models/session");
+const crypto = require("crypto");
 const Notification = require("../models/notification");
+const { cleanupExpiredSessions } = require("./sessionController");
 
 function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
@@ -54,13 +57,47 @@ exports.login = async (req, res) => {
         message: "Your branch account is not active. Please contact support.",
       });
     }
+    
+    await cleanupExpiredSessions("Vendor");
+    // ─── Check for existing active session ───────────────────────────────────
+    const existingSession = await Session.findOne({
+      userId: vendorBranch._id,
+      userType: "Vendor",
+      isActive: true,
+    });
 
-    // 4. Generate JWT token (role: vendor)
+    if (existingSession) {
+      return res.status(409).json({
+        status: false,
+        alreadyLogged: true,
+        message: "This branch account is already logged in on another device.",
+        loggedInSince: existingSession.createdAt,
+        lastActivity: existingSession.lastActivity,
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const sessionId = crypto.randomBytes(16).toString("hex");
     const token = jwt.sign(
-      { id: vendorBranch._id, role: "vendor", mainVendorId: mainVendor._id },
+      {
+        id: vendorBranch._id,
+        role: "vendor",
+        mainVendorId: mainVendor._id,
+        sessionId,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "1d" },
     );
+
+    // Create new session
+    await Session.create({
+      sessionId,
+      userId: vendorBranch._id,
+      userType: "Vendor",
+      token,
+      lastActivity: new Date(),
+      isActive: true,
+    });
 
     const vendorData = vendorBranch.toObject();
 
@@ -68,13 +105,94 @@ exports.login = async (req, res) => {
       status: true,
       message: "Login successful",
       token,
+      sessionId, // Returning sessionId to frontend for tracking
       user: {
         ...vendorData,
         role: "vendor",
       },
     });
   } catch (error) {
-    console.error("Vendor branch login error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.forceLogin = async (req, res) => {
+  try {
+    const { email, branchId } = req.body;
+
+    const mainVendor = await MainVendor.findOne({ email });
+    if (!mainVendor) {
+      return res
+        .status(404)
+        .json({ status: false, message: "Main Vendor account not found." });
+    }
+
+    const vendorBranch = await Vendor.findOne({
+      branchId,
+      mainVendorId: mainVendor._id,
+    }).populate("mainVendorId", "name email");
+
+    if (!vendorBranch) {
+      return res
+        .status(404)
+        .json({
+          status: false,
+          message:
+            "Vendor branch not found or does not belong to this Main Vendor.",
+        });
+    }
+
+    if (vendorBranch.status !== "Active") {
+      return res
+        .status(403)
+        .json({
+          status: false,
+          message: "Your branch account is not active. Please contact support.",
+        });
+    }
+
+    // Invalidate existing sessions
+    await Session.updateMany(
+      { userId: vendorBranch._id, userType: "Vendor", isActive: true },
+      { isActive: false },
+    );
+
+    const sessionId = crypto.randomBytes(16).toString("hex");
+    const token = jwt.sign(
+      {
+        id: vendorBranch._id,
+        role: "vendor",
+        mainVendorId: mainVendor._id,
+        sessionId,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" },
+    );
+
+    // Create new session
+    await Session.create({
+      sessionId,
+      userId: vendorBranch._id,
+      userType: "Vendor",
+      token,
+      lastActivity: new Date(),
+      isActive: true,
+    });
+
+    const vendorData = vendorBranch.toObject();
+
+    res.status(200).json({
+      status: true,
+      message: "Force login successful",
+      token,
+      sessionId,
+      user: {
+        ...vendorData,
+        role: "vendor",
+      },
+    });
+  } catch (error) {
+    console.error("Vendor branch force login error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };

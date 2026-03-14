@@ -44,4 +44,7 @@ app.use("/api/dashboard", require("./routes/dashboardRoute"));
 //Billing Routes
 app.use("/api/billing", require("./routes/billingRoutes"));
 
+// Session Routes
+app.use("/api/session", require("./routes/sessionRoute"));
+
 module.exports = app;

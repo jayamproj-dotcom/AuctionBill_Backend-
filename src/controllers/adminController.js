@@ -2,41 +2,81 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const Admin = require("../models/admin");
+const Session = require("../models/session");
 const sendEmail = require("../utils/sendEmail");
+const { cleanupExpiredSessions } = require("../controllers/sessionController");
 
 exports.login = async (req, res) => {
   try {
     const { username, password } = req.body;
 
     const admin = await Admin.findOne({ username });
-    if (!admin) return res.status(400).json({ status: false, message: "User not found" });
+    if (!admin)
+      return res.status(400).json({ status: false, message: "User not found" });
 
     if (admin.role === "sub-admin" && admin.status !== "Active") {
-      return res.status(403).json({ status: false, message: "Access denied. Account is not active." });
+      return res
+        .status(403)
+        .json({
+          status: false,
+          message: "Access denied. Account is not active.",
+        });
     }
 
     const isMatch = await bcrypt.compare(password, admin.password);
-    if (!isMatch) return res.status(400).json({ status: false, message: "Invalid password" });
+    if (!isMatch)
+      return res
+        .status(400)
+        .json({ status: false, message: "Invalid password" });
 
+    await cleanupExpiredSessions("Admin");
+
+    // ─── Check for existing active session ───────────────────────────────────
+    const existingSession = await Session.findOne({
+      userId: admin._id,
+      userType: "Admin",
+      isActive: true,
+    });
+
+    if (existingSession) {
+      return res.status(409).json({
+        status: false,
+        alreadyLogged: true,
+        message: "This account is already logged in on another device. or After 5 minutes of inactivity, you will be logged out.",
+        loggedInSince: existingSession.createdAt,
+        lastActivity: existingSession.lastActivity,
+      });
+    }
+
+    const sessionId = crypto.randomBytes(16).toString("hex");
     const token = jwt.sign(
-      { id: admin._id, role: admin.role },
+      { id: admin._id, role: admin.role, sessionId },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: "1d" },
     );
+
+    await Session.create({
+      sessionId,
+      userId: admin._id,
+      userType: "Admin",
+      token,
+      lastActivity: new Date(),
+      isActive: true,
+    });
 
     res.status(200).json({
       status: true,
       message: "Login successful",
       token,
+      sessionId,
       data: {
         username: admin.username,
         email: admin.email,
         role: admin.role,
         id: admin._id,
-        permissions: admin.permissions
-      }
+        permissions: admin.permissions,
+      },
     });
-
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -48,28 +88,37 @@ exports.updateProfie = async (req, res) => {
     const { username, email, otp } = req.body;
     console.log(req.user);
     const admin = await Admin.findOne({ _id: req.user.id });
-    if (!admin) return res.status(400).json({ status: false, message: "User not found" });
+    if (!admin)
+      return res.status(400).json({ status: false, message: "User not found" });
 
     const existingUser = await Admin.findOne({
       $or: [{ username }, { email }],
-      _id: { $ne: req.user.id }
+      _id: { $ne: req.user.id },
     });
 
     if (existingUser) {
       if (existingUser.username === username) {
-        return res.status(400).json({ status: false, message: "Username is already in use" });
+        return res
+          .status(400)
+          .json({ status: false, message: "Username is already in use" });
       }
       if (existingUser.email === email) {
-        return res.status(400).json({ status: false, message: "Email is already in use" });
+        return res
+          .status(400)
+          .json({ status: false, message: "Email is already in use" });
       }
     }
 
     if (email && email !== admin.email) {
       if (!otp) {
-        return res.status(400).json({ status: false, message: "OTP is required to change email" });
+        return res
+          .status(400)
+          .json({ status: false, message: "OTP is required to change email" });
       }
       if (admin.otp !== otp || admin.otpExpires < Date.now()) {
-        return res.status(400).json({ status: false, message: "Invalid or expired OTP" });
+        return res
+          .status(400)
+          .json({ status: false, message: "Invalid or expired OTP" });
       }
       // OTP is valid, clear it
       admin.otp = undefined;
@@ -79,23 +128,32 @@ exports.updateProfie = async (req, res) => {
     admin.username = username;
     admin.email = email;
     await admin.save();
-    res.status(200).json({ status: true, message: "Profile updated successfully", admin });
+    res
+      .status(200)
+      .json({ status: true, message: "Profile updated successfully", admin });
   } catch (error) {
     console.error("Update profile error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
   }
-}
+};
 
 exports.sendEmailUpdateOtp = async (req, res) => {
   try {
     const { email } = req.body;
     const admin = await Admin.findById(req.user.id);
 
-    if (!admin) return res.status(404).json({ status: false, message: "User not found" });
+    if (!admin)
+      return res.status(404).json({ status: false, message: "User not found" });
 
     // Check if new email is already used by another user
-    const existingUser = await Admin.findOne({ email, _id: { $ne: req.user.id } });
-    if (existingUser) return res.status(400).json({ status: false, message: "Email is already in use" });
+    const existingUser = await Admin.findOne({
+      email,
+      _id: { $ne: req.user.id },
+    });
+    if (existingUser)
+      return res
+        .status(400)
+        .json({ status: false, message: "Email is already in use" });
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -128,7 +186,9 @@ exports.sendEmailUpdateOtp = async (req, res) => {
 `;
 
     await sendEmail(email, "Update Email OTP", emailContent);
-    res.status(200).json({ status: true, message: "OTP sent to your new email" });
+    res
+      .status(200)
+      .json({ status: true, message: "OTP sent to your new email" });
   } catch (error) {
     console.error("Send email update OTP error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -139,12 +199,11 @@ exports.updatePassword = async (req, res) => {
   try {
     const hashed = await bcrypt.hash(req.body.password, 10);
 
-    await Admin.updateOne(
-      { _id: req.user.id },
-      { password: hashed }
-    );
+    await Admin.updateOne({ _id: req.user.id }, { password: hashed });
 
-    res.status(200).json({ status: true, message: "Password updated successfully" });
+    res
+      .status(200)
+      .json({ status: true, message: "Password updated successfully" });
   } catch (error) {
     console.error("Update password error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -154,7 +213,8 @@ exports.updatePassword = async (req, res) => {
 exports.getAdmin = async (req, res) => {
   try {
     const admin = await Admin.findById(req.user.id).select("-password");
-    if (!admin) return res.status(404).json({ status: false, message: "User not found" });
+    if (!admin)
+      return res.status(404).json({ status: false, message: "User not found" });
 
     res.status(200).json({ status: true, admin });
   } catch (error) {
@@ -166,17 +226,20 @@ exports.getAdmin = async (req, res) => {
 exports.verifyPassword = async (req, res) => {
   try {
     const admin = await Admin.findById(req.user.id);
-    if (!admin) return res.status(404).json({ status: false, message: "User not found" });
+    if (!admin)
+      return res.status(404).json({ status: false, message: "User not found" });
 
     const isMatch = await bcrypt.compare(req.body.password, admin.password);
     if (!isMatch) {
-      return res.status(400).json({ status: false, message: "currect password not match" });
+      return res
+        .status(400)
+        .json({ status: false, message: "currect password not match" });
     }
 
     res.status(200).json({
       status: true,
       message: "currect password is correct",
-      currectPassword: true
+      currectPassword: true,
     });
   } catch (error) {
     console.error("Verify password error:", error);
@@ -190,15 +253,24 @@ exports.createSubAdmin = async (req, res) => {
     let { username, email, status, name } = req.body;
     username = username || name;
 
-    if (!username) return res.status(400).json({ status: false, message: "Username is required" });
+    if (!username)
+      return res
+        .status(400)
+        .json({ status: false, message: "Username is required" });
 
     const adminNameExists = await Admin.findOne({ username });
-    if (adminNameExists) return res.status(400).json({ status: false, message: "Name is already in use" });
+    if (adminNameExists)
+      return res
+        .status(400)
+        .json({ status: false, message: "Name is already in use" });
 
     const adminEmailExists = await Admin.findOne({ email });
-    if (adminEmailExists) return res.status(400).json({ status: false, message: "Email is already in use" });
-    
-    const password = crypto.randomBytes(4).toString('hex');
+    if (adminEmailExists)
+      return res
+        .status(400)
+        .json({ status: false, message: "Email is already in use" });
+
+    const password = crypto.randomBytes(4).toString("hex");
     const hashed = await bcrypt.hash(password, 10);
     const newAdmin = new Admin({
       username,
@@ -209,10 +281,10 @@ exports.createSubAdmin = async (req, res) => {
       permissions: {
         vendorAdd: false,
         subscriptionAccess: false,
-        passwordChange: false
+        passwordChange: false,
       },
       createdBy: req.user?.id,
-      updatedBy: req.user?.id
+      updatedBy: req.user?.id,
     });
     await newAdmin.save();
 
@@ -279,7 +351,7 @@ exports.createSubAdmin = async (req, res) => {
 
                 <!-- Button -->
                 <div style="text-align:center; margin-top:25px;">
-                  <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/auctionbilling/saas-admin" 
+                  <a href="${process.env.CLIENT_URL || "http://localhost:5173"}/auctionbilling/saas-admin" 
                      style="background:#f39c12; color:#ffffff; 
                             padding:12px 25px; text-decoration:none; 
                             border-radius:5px; font-weight:bold;">
@@ -310,19 +382,27 @@ exports.createSubAdmin = async (req, res) => {
 
   </body>
   </html>
-  `
+  `,
     );
 
-    res.status(200).json({ status: true, message: "Sub-admin created successfully", newAdmin });
+    res
+      .status(200)
+      .json({
+        status: true,
+        message: "Sub-admin created successfully",
+        newAdmin,
+      });
   } catch (error) {
     console.error("Create sub-admin error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
   }
-}
+};
 
 exports.getSubAdmins = async (req, res) => {
   try {
-    const subAdmins = await Admin.find({ role: "sub-admin" }).select("-password");
+    const subAdmins = await Admin.find({ role: "sub-admin" }).select(
+      "-password",
+    );
     res.status(200).json({ status: true, subAdmins });
   } catch (error) {
     console.error("Get sub-admins error:", error);
@@ -338,23 +418,32 @@ exports.updateSubAdmin = async (req, res) => {
 
     const subAdmin = await Admin.findById(id);
     if (!subAdmin || subAdmin.role !== "sub-admin") {
-      return res.status(404).json({ status: false, message: "Sub-admin not found" });
+      return res
+        .status(404)
+        .json({ status: false, message: "Sub-admin not found" });
     }
 
     if (username && username !== subAdmin.username) {
       const nameExists = await Admin.findOne({ username });
-      if (nameExists) return res.status(400).json({ status: false, message: "Name is already in use" });
+      if (nameExists)
+        return res
+          .status(400)
+          .json({ status: false, message: "Name is already in use" });
     }
 
     if (email && email !== subAdmin.email) {
       const emailExists = await Admin.findOne({ email });
-      if (emailExists) return res.status(400).json({ status: false, message: "Email is already in use" });
+      if (emailExists)
+        return res
+          .status(400)
+          .json({ status: false, message: "Email is already in use" });
     }
 
     if (username) subAdmin.username = username;
     if (email) subAdmin.email = email;
     if (status) subAdmin.status = status;
-    if (permissions) subAdmin.permissions = { ...subAdmin.permissions, ...permissions };
+    if (permissions)
+      subAdmin.permissions = { ...subAdmin.permissions, ...permissions };
 
     // Ensure we don't accidentally update the password this way
     if (password) {
@@ -385,7 +474,7 @@ exports.updateSubAdmin = async (req, res) => {
               <td align="center" 
                   style="background:#f39c12; padding:25px; color:#ffffff;">
                 <h1 style="margin:0; font-size:24px;">
-                 ${process.env.COMPANY_NAME || 'AuctionBilling'}
+                 ${process.env.COMPANY_NAME || "AuctionBilling"}
                 </h1>
                 <p style="margin:5px 0 0; font-size:14px;">
                   Sub Admin Account Updated
@@ -413,14 +502,14 @@ exports.updateSubAdmin = async (req, res) => {
                   </tr>
                   <tr>
                     <td><strong>Password:</strong></td>
-                    <td>${password ? password : '<i>(Unchanged)</i>'}</td>
+                    <td>${password ? password : "<i>(Unchanged)</i>"}</td>
                   </tr>
                 </table>
                 <p>
                   Your Sub Admin account details or permissions have been updated by the administrator.
                 </p>
                 <div style="text-align:center; margin-top:25px;">
-                  <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/auctionbilling/saas-admin" 
+                  <a href="${process.env.CLIENT_URL || "http://localhost:5173"}/auctionbilling/saas-admin" 
                      style="background:#f39c12; color:#ffffff; 
                             padding:12px 25px; text-decoration:none; 
                             border-radius:5px; font-weight:bold;">
@@ -433,7 +522,7 @@ exports.updateSubAdmin = async (req, res) => {
               <td align="center" 
                   style="background:#f1f1f1; padding:20px; font-size:12px; color:#777;">
                 <p style="margin:0;">
-                  © ${new Date().getFullYear()} ${process.env.COMPANY_NAME || 'AuctionBilling'}. All rights reserved.
+                  © ${new Date().getFullYear()} ${process.env.COMPANY_NAME || "AuctionBilling"}. All rights reserved.
                 </p>
               </td>
             </tr>
@@ -443,10 +532,16 @@ exports.updateSubAdmin = async (req, res) => {
     </table>
   </body>
   </html>
-      `
+      `,
     );
 
-    res.status(200).json({ status: true, message: "Sub-admin updated successfully", subAdmin });
+    res
+      .status(200)
+      .json({
+        status: true,
+        message: "Sub-admin updated successfully",
+        subAdmin,
+      });
   } catch (error) {
     console.error("Update sub-admin error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -456,10 +551,15 @@ exports.updateSubAdmin = async (req, res) => {
 exports.deleteSubAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-    const subAdmin = await Admin.findOneAndDelete({ _id: id, role: "sub-admin" });
+    const subAdmin = await Admin.findOneAndDelete({
+      _id: id,
+      role: "sub-admin",
+    });
 
     if (!subAdmin) {
-      return res.status(404).json({ status: false, message: "Sub-admin not found" });
+      return res
+        .status(404)
+        .json({ status: false, message: "Sub-admin not found" });
     }
 
     // Send delete email
@@ -505,15 +605,18 @@ exports.deleteSubAdmin = async (req, res) => {
     </table>
   </body>
   </html>
-  `
+  `,
     );
 
-    res.status(200).json({ status: true, message: "Sub-admin deleted successfully" });
+    res
+      .status(200)
+      .json({ status: true, message: "Sub-admin deleted successfully" });
   } catch (error) {
     console.error("Delete sub-admin error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
+
 exports.changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -521,19 +624,25 @@ exports.changePassword = async (req, res) => {
 
     const admin = await Admin.findById(adminId);
     if (!admin) {
-      return res.status(404).json({ status: false, message: "Admin not found" });
+      return res
+        .status(404)
+        .json({ status: false, message: "Admin not found" });
     }
 
     const isMatch = await bcrypt.compare(currentPassword, admin.password);
     if (!isMatch) {
-      return res.status(400).json({ status: false, message: "Incorrect current password" });
+      return res
+        .status(400)
+        .json({ status: false, message: "Incorrect current password" });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     admin.password = hashedPassword;
     await admin.save();
 
-    res.status(200).json({ status: true, message: "Password changed successfully" });
+    res
+      .status(200)
+      .json({ status: true, message: "Password changed successfully" });
   } catch (error) {
     console.error("Change password error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -546,11 +655,21 @@ exports.forgotPassword = async (req, res) => {
     const admin = await Admin.findOne({ email });
 
     if (!admin) {
-      return res.status(404).json({ status: false, message: "Admin with this email does not exist" });
+      return res
+        .status(404)
+        .json({
+          status: false,
+          message: "Admin with this email does not exist",
+        });
     }
 
     if (admin.role === "sub-admin" && admin.status !== "Active") {
-      return res.status(403).json({ status: false, message: "Account is inactive. Please contact the Admin." });
+      return res
+        .status(403)
+        .json({
+          status: false,
+          message: "Account is inactive. Please contact the Admin.",
+        });
     }
 
     // Generate 6-digit OTP
@@ -597,11 +716,13 @@ exports.resetPassword = async (req, res) => {
     const admin = await Admin.findOne({
       email,
       otp,
-      otpExpires: { $gt: Date.now() }
+      otpExpires: { $gt: Date.now() },
     });
 
     if (!admin) {
-      return res.status(400).json({ status: false, message: "Invalid or expired OTP" });
+      return res
+        .status(400)
+        .json({ status: false, message: "Invalid or expired OTP" });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -610,7 +731,9 @@ exports.resetPassword = async (req, res) => {
     admin.otpExpires = undefined;
     await admin.save();
 
-    res.status(200).json({ status: true, message: "Password reset successfully" });
+    res
+      .status(200)
+      .json({ status: true, message: "Password reset successfully" });
   } catch (error) {
     console.error("Admin reset password error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });

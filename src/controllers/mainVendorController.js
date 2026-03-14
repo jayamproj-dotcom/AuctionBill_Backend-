@@ -2,6 +2,8 @@ const MainVendor = require("../models/main-vendor");
 const Plan = require("../models/subscriptions");
 const bcrypt = require("bcryptjs");
 const UserSubscription = require("../models/userSubscription");
+const Session = require("../models/session");
+const crypto = require("crypto");
 const ExcelJS = require("exceljs");
 const Notification = require("../models/notification");
 const sendEmail = require("../utils/sendEmail");
@@ -10,6 +12,7 @@ const Vendor = require("../models/vendor");
 const Seller = require("../models/seller");
 const Buyer = require("../models/buyer");
 const Transaction = require("../models/transaction");
+const { cleanupExpiredSessions } = require("./sessionController");
 
 function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
@@ -798,11 +801,42 @@ exports.login = async (req, res) => {
       });
     }
 
+    await cleanupExpiredSessions("MainVendor");
+
+    // ─── Check for existing active session ───────────────────────────────────
+    const existingSession = await Session.findOne({
+      userId:   mainVendor._id,
+      userType: 'MainVendor',
+      isActive: true
+    });
+
+    if (existingSession) {
+      return res.status(409).json({
+        status:        false,
+        alreadyLogged: true,
+        message:       "This account is already logged in on another device.",
+        loggedInSince: existingSession.createdAt,
+        lastActivity:  existingSession.lastActivity
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const sessionId = crypto.randomBytes(16).toString("hex");
     const token = jwt.sign(
-      { id: mainVendor._id, role: "main-vendor" },
+      { id: mainVendor._id, role: "main-vendor", sessionId },
       process.env.JWT_SECRET,
       { expiresIn: "1d" },
     );
+
+    // Create new session
+    await Session.create({
+      sessionId,
+      userId: mainVendor._id,
+      userType: 'MainVendor',
+      token,
+      lastActivity: new Date(),
+      isActive: true
+    });
 
     const vendorData = mainVendor.toObject();
     delete vendorData.password;
@@ -819,6 +853,7 @@ exports.login = async (req, res) => {
       status: true,
       message: "Login successful",
       token,
+      sessionId, // Returning sessionId to frontend for tracking
       user: {
         ...vendorData,
         role: "main-vendor",
@@ -826,7 +861,74 @@ exports.login = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Main Vendor login error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.forceLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const mainVendor = await MainVendor.findOne({ email }).populate("plan");
+    if (!mainVendor) {
+      return res.status(404).json({
+        status: false,
+        message: "Account not found.",
+      });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, mainVendor.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ status: false, message: "Invalid email or password" });
+    }
+
+    // Invalidate existing sessions
+    await Session.updateMany(
+      { userId: mainVendor._id, userType: 'MainVendor', isActive: true },
+      { isActive: false }
+    );
+
+    const sessionId = crypto.randomBytes(16).toString("hex");
+    const token = jwt.sign(
+      { id: mainVendor._id, role: "main-vendor", sessionId },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" },
+    );
+
+    // Create new session
+    await Session.create({
+      sessionId,
+      userId: mainVendor._id,
+      userType: 'MainVendor',
+      token,
+      lastActivity: new Date(),
+      isActive: true
+    });
+
+    const vendorData = mainVendor.toObject();
+    delete vendorData.password;
+    delete vendorData.otp;
+    delete vendorData.otpExpires;
+
+    const activeSubscription = await UserSubscription.findOne({
+      userId: mainVendor._id,
+      startDate: { $lte: new Date() },
+      endDate: { $gte: new Date() },
+    }).sort({ startDate: -1 });
+
+    res.status(200).json({
+      status: true,
+      message: "Force login successful",
+      token,
+      sessionId,
+      user: {
+        ...vendorData,
+        role: "main-vendor",
+        activeSubscription,
+      },
+    });
+  } catch (error) {
+    console.error("Main Vendor force login error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
