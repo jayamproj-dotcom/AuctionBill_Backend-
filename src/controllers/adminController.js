@@ -453,6 +453,12 @@ exports.updateSubAdmin = async (req, res) => {
     subAdmin.updatedBy = req.user?.id;
     await subAdmin.save();
 
+    // Invalidate existing sessions so changes (permissions, status) take effect immediately
+    await Session.updateMany(
+      { userId: id, userType: "Admin", isActive: true },
+      { isActive: false },
+    );
+
     // Send email notification for update
     await sendEmail(
       subAdmin.email,
@@ -561,6 +567,12 @@ exports.deleteSubAdmin = async (req, res) => {
         .status(404)
         .json({ status: false, message: "Sub-admin not found" });
     }
+
+    // Invalidate all sessions for this sub-admin
+    await Session.updateMany(
+      { userId: id, userType: "Admin", isActive: true },
+      { isActive: false },
+    );
 
     // Send delete email
     await sendEmail(

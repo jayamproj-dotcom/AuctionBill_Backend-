@@ -47,4 +47,6 @@ app.use("/api/billing", require("./routes/billingRoutes"));
 // Session Routes
 app.use("/api/session", require("./routes/sessionRoute"));
 
+app.use("/api/authme", require("./routes/authmeRoute"));
+
 module.exports = app;

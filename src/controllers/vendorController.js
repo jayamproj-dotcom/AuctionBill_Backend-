@@ -30,14 +30,29 @@ exports.login = async (req, res) => {
     if (!mainVendor) {
       return res.status(404).json({
         status: false,
-        message: "Main Vendor account not found.",
+        message: "Main vendor account deleted",
       });
     }
 
-    // 2. Verified branch by providing branchId and email of main vendor
-    // (Password check removed as per request)
+    if (mainVendor.status !== "Active") {
+      return res.status(403).json({
+        status: false,
+        message: "Main vendor account inactive",
+      });
+    }
 
-    // 3. Find the specific Vendor branch using branchId
+    if (
+      mainVendor.planEndDate &&
+      new Date() > new Date(mainVendor.planEndDate)
+    ) {
+      return res.status(403).json({
+        status: false,
+        message: "Main vendor subscription expired",
+        planExpired: true,
+      });
+    }
+
+    // 2. Find the specific Vendor branch using branchId
     const vendorBranch = await Vendor.findOne({
       branchId,
       mainVendorId: mainVendor._id,
@@ -116,86 +131,6 @@ exports.login = async (req, res) => {
   }
 };
 
-exports.forceLogin = async (req, res) => {
-  try {
-    const { email, branchId } = req.body;
-
-    const mainVendor = await MainVendor.findOne({ email });
-    if (!mainVendor) {
-      return res
-        .status(404)
-        .json({ status: false, message: "Main Vendor account not found." });
-    }
-
-    const vendorBranch = await Vendor.findOne({
-      branchId,
-      mainVendorId: mainVendor._id,
-    }).populate("mainVendorId", "name email");
-
-    if (!vendorBranch) {
-      return res
-        .status(404)
-        .json({
-          status: false,
-          message:
-            "Vendor branch not found or does not belong to this Main Vendor.",
-        });
-    }
-
-    if (vendorBranch.status !== "Active") {
-      return res
-        .status(403)
-        .json({
-          status: false,
-          message: "Your branch account is not active. Please contact support.",
-        });
-    }
-
-    // Invalidate existing sessions
-    await Session.updateMany(
-      { userId: vendorBranch._id, userType: "Vendor", isActive: true },
-      { isActive: false },
-    );
-
-    const sessionId = crypto.randomBytes(16).toString("hex");
-    const token = jwt.sign(
-      {
-        id: vendorBranch._id,
-        role: "vendor",
-        mainVendorId: mainVendor._id,
-        sessionId,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" },
-    );
-
-    // Create new session
-    await Session.create({
-      sessionId,
-      userId: vendorBranch._id,
-      userType: "Vendor",
-      token,
-      lastActivity: new Date(),
-      isActive: true,
-    });
-
-    const vendorData = vendorBranch.toObject();
-
-    res.status(200).json({
-      status: true,
-      message: "Force login successful",
-      token,
-      sessionId,
-      user: {
-        ...vendorData,
-        role: "vendor",
-      },
-    });
-  } catch (error) {
-    console.error("Vendor branch force login error:", error);
-    res.status(500).json({ status: false, message: "Internal server error" });
-  }
-};
 
 exports.createVendor = async (req, res) => {
   try {
@@ -349,6 +284,14 @@ exports.updateVendor = async (req, res) => {
     vendor.updatedBy = req.user?.id;
     await vendor.save();
 
+    // Invalidate sessions if status was changed to Inactive
+    if (status && status !== "Active") {
+      await Session.updateMany(
+        { userId: id, userType: "Vendor", isActive: true },
+        { isActive: false },
+      );
+    }
+
     res
       .status(200)
       .json({ status: true, message: "Vendor updated successfully", vendor });
@@ -368,6 +311,12 @@ exports.deleteVendor = async (req, res) => {
         .status(404)
         .json({ status: false, message: "Vendor not found" });
     }
+
+    // Invalidate all sessions for this Vendor branch
+    await Session.updateMany(
+      { userId: id, userType: "Vendor", isActive: true },
+      { isActive: false },
+    );
 
     res
       .status(200)

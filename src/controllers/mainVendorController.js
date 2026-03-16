@@ -482,6 +482,14 @@ exports.updateMainVendor = async (req, res) => {
       console.error("Post-update notification/email error:", notifyErr);
     }
 
+    // Invalidate existing sessions if status was changed to Inactive
+    if (updateData.status && updateData.status !== "Active") {
+      await Session.updateMany(
+        { userId: id, userType: "MainVendor", isActive: true },
+        { isActive: false },
+      );
+    }
+
     res.status(200).json({
       status: true,
       message: "Main vendor updated",
@@ -507,6 +515,16 @@ exports.deleteMainVendor = async (req, res) => {
     }
 
     await MainVendor.findByIdAndDelete(id);
+
+    // Invalidate all sessions for this MainVendor
+    await Session.updateMany(
+      {
+        userId: id,
+        userType: "MainVendor",
+        isActive: true,
+      },
+      { isActive: false },
+    );
 
     // optional email informing deletion
     try {
