@@ -4,9 +4,30 @@ const path = require("path");
 
 const app = express();
 
-app.use(cors());
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "").split(",").map(origin => origin.trim());
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
+// strip /auction prefix
+app.use((req, res, next) => {
+  if (req.url.startsWith("/auction")) {
+    req.url = req.url.replace(/^\/auction/, "");
+  }
+  next();
+});
 
 //Admin Routes
 app.use("/api/admin", require("./routes/adminRoute"));
@@ -48,5 +69,10 @@ app.use("/api/billing", require("./routes/billingRoutes"));
 app.use("/api/session", require("./routes/sessionRoute"));
 
 app.use("/api/authme", require("./routes/authmeRoute"));
+
+app.get("/api/test", (req, res) => {
+  res.send("Auction API Working ✅");
+});
+
 
 module.exports = app;

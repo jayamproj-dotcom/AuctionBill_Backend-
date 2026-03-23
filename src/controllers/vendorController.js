@@ -72,7 +72,7 @@ exports.login = async (req, res) => {
         message: "Your branch account is not active. Please contact support.",
       });
     }
-    
+
     await cleanupExpiredSessions("Vendor");
     // ─── Check for existing active session ───────────────────────────────────
     const existingSession = await Session.findOne({
@@ -130,7 +130,6 @@ exports.login = async (req, res) => {
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
-
 
 exports.createVendor = async (req, res) => {
   try {

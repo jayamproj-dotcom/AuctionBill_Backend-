@@ -15,12 +15,10 @@ exports.login = async (req, res) => {
       return res.status(400).json({ status: false, message: "User not found" });
 
     if (admin.role === "sub-admin" && admin.status !== "Active") {
-      return res
-        .status(403)
-        .json({
-          status: false,
-          message: "Access denied. Account is not active.",
-        });
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Account is not active.",
+      });
     }
 
     const isMatch = await bcrypt.compare(password, admin.password);
@@ -42,7 +40,8 @@ exports.login = async (req, res) => {
       return res.status(409).json({
         status: false,
         alreadyLogged: true,
-        message: "This account is already logged in on another device. or After 5 minutes of inactivity, you will be logged out.",
+        message:
+          "This account is already logged in on another device. or After 5 minutes of inactivity, you will be logged out.",
         loggedInSince: existingSession.createdAt,
         lastActivity: existingSession.lastActivity,
       });
@@ -385,13 +384,11 @@ exports.createSubAdmin = async (req, res) => {
   `,
     );
 
-    res
-      .status(200)
-      .json({
-        status: true,
-        message: "Sub-admin created successfully",
-        newAdmin,
-      });
+    res.status(200).json({
+      status: true,
+      message: "Sub-admin created successfully",
+      newAdmin,
+    });
   } catch (error) {
     console.error("Create sub-admin error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -541,13 +538,11 @@ exports.updateSubAdmin = async (req, res) => {
       `,
     );
 
-    res
-      .status(200)
-      .json({
-        status: true,
-        message: "Sub-admin updated successfully",
-        subAdmin,
-      });
+    res.status(200).json({
+      status: true,
+      message: "Sub-admin updated successfully",
+      subAdmin,
+    });
   } catch (error) {
     console.error("Update sub-admin error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });
@@ -667,21 +662,17 @@ exports.forgotPassword = async (req, res) => {
     const admin = await Admin.findOne({ email });
 
     if (!admin) {
-      return res
-        .status(404)
-        .json({
-          status: false,
-          message: "Admin with this email does not exist",
-        });
+      return res.status(404).json({
+        status: false,
+        message: "Admin with this email does not exist",
+      });
     }
 
     if (admin.role === "sub-admin" && admin.status !== "Active") {
-      return res
-        .status(403)
-        .json({
-          status: false,
-          message: "Account is inactive. Please contact the Admin.",
-        });
+      return res.status(403).json({
+        status: false,
+        message: "Account is inactive. Please contact the Admin.",
+      });
     }
 
     // Generate 6-digit OTP
