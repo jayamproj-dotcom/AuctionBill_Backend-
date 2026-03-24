@@ -406,6 +406,10 @@ exports.updateSeller = async (req, res) => {
       "city",
       "address",
       "status",
+      "customCommission",
+      "commissionPercent",
+      "commissionStartDate",
+      "commissionEndDate",
     ];
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) seller[field] = req.body[field];

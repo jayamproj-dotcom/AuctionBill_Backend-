@@ -15,6 +15,10 @@ const sellerSchema = new mongoose.Schema(
     address: { type: String, trim: true, default: "" },
     status: { type: String, enum: ["active", "inactive"], default: "active" },
     advanceAmount: { type: Number, default: 0 },
+    customCommission: { type: Boolean, default: false },
+    commissionPercent: { type: Number, default: 0 },
+    commissionStartDate: { type: Date, default: null },
+    commissionEndDate: { type: Date, default: null },
   },
   { timestamps: true },
 );
