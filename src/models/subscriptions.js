@@ -31,9 +31,11 @@ const planSchema = new mongoose.Schema({
         type: String,
         default: 'Active'
     },
-    features: [{
-        type: String
-    }],
+    branchCount: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
     description: {
         type: String,
         default: ''
