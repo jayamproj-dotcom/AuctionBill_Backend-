@@ -1,4 +1,5 @@
 const MainVendor = require("../models/main-vendor");
+const mongoose = require("mongoose");
 const Plan = require("../models/subscriptions");
 const bcrypt = require("bcryptjs");
 const UserSubscription = require("../models/userSubscription");
@@ -1456,14 +1457,31 @@ exports.getDashboardSummary = async (req, res) => {
     const mainVendorId = req.user.id;
     const { branchId, startDate, endDate, date } = req.query;
 
-    let vendorQuery = { mainVendorId };
-    if (branchId && branchId !== "all") {
-      vendorQuery._id = branchId;
-    }
+    let branchIds = [];
+    let totalBranches = 0;
 
-    const branches = await Vendor.find(vendorQuery).select("_id name");
-    const branchIds = branches.map((b) => b._id);
-    const totalBranches = branchIds.length;
+    if (branchId === "all") {
+      // Find all branches
+      const branches = await Vendor.find({ mainVendorId }).select("_id");
+      branchIds = branches.map((v) => v._id);
+      totalBranches = branchIds.length;
+      // Add main vendor ID to the list to include their own data in "All"
+      branchIds.push(new mongoose.Types.ObjectId(mainVendorId));
+    } else if (branchId === mainVendorId) {
+      // "My Details" - only main vendor's own data
+      branchIds = [new mongoose.Types.ObjectId(mainVendorId)];
+      totalBranches = 0; // Not applicable for single view, or we could keep it as 0
+    } else if (branchId) {
+      // Specific branch
+      branchIds = [new mongoose.Types.ObjectId(branchId)];
+      totalBranches = 1;
+    } else {
+      // Default fallback (e.g. if branchId not provided/all)
+      const branches = await Vendor.find({ mainVendorId }).select("_id");
+      branchIds = branches.map((v) => v._id);
+      totalBranches = branchIds.length;
+      branchIds.push(new mongoose.Types.ObjectId(mainVendorId));
+    }
 
     // Build common date filter
     let dateFilter = {};

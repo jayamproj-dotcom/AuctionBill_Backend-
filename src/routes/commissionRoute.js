@@ -11,13 +11,13 @@ router.use(authMiddleware);
 router.get("/", roleMiddleware("admin"), commissionController.getAllCommissions);
 
 // Get commission for a specific vendor
-router.get("/:vendorId", roleMiddleware("admin", "vendor"), commissionController.getVendorCommission);
+router.get("/:vendorId", roleMiddleware("admin", "vendor", "main-vendor"), commissionController.getVendorCommission);
 
 // Update or create commission for a vendor
-router.put("/:vendorId", roleMiddleware("admin", "vendor"), commissionController.updateVendorCommission);
+router.put("/:vendorId", roleMiddleware("admin", "vendor", "main-vendor"), commissionController.updateVendorCommission);
 
 // Get all commission records (transactions) for a vendor
-router.get("/records/:vendorId", roleMiddleware("admin", "vendor"), commissionController.getCommissionRecords);
+router.get("/records/:vendorId", roleMiddleware("admin", "vendor", "main-vendor"), commissionController.getCommissionRecords);
 
 // Delete commission for a vendor
 router.delete("/:vendorId", roleMiddleware("admin"), commissionController.deleteCommission);

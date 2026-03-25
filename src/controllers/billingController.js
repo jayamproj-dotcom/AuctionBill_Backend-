@@ -4,6 +4,7 @@ const Transaction = require("../models/transaction");
 const SellerPayment = require("../models/sellerPayment");
 const BuyerPayment = require("../models/buyerPayment");
 const Vendor = require("../models/vendor");
+const MainVendor = require("../models/main-vendor");
 const mongoose = require("mongoose");
 
 // Get data for billing export
@@ -24,7 +25,12 @@ exports.getBillingData = async (req, res) => {
         .json({ success: false, message: "Unauthorized access" });
     }
 
-    const vendor = await Vendor.findById(vendorId).select("-password");
+    let vendor = await Vendor.findById(vendorId).select("-password");
+    if (!vendor) {
+      // Check MainVendor if not found in Vendor collection
+      vendor = await MainVendor.findById(vendorId).select("-password");
+    }
+
     if (!vendor) {
       return res
         .status(404)

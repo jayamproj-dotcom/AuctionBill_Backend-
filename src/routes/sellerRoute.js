@@ -10,33 +10,33 @@ router.use(authMiddleware);
 // ── Seller CRUD ──────────────────────────────────────────────────────
 
 // Get all sellers for a vendor
-router.get("/list/:vendorId", roleMiddleware("admin", "vendor"), sellerController.getSellers);
+router.get("/list/:vendorId", roleMiddleware("admin", "vendor", "main-vendor"), sellerController.getSellers);
 
 // Get a single seller
-router.get("/:sellerId", roleMiddleware("admin", "vendor"), sellerController.getSellerById);
+router.get("/:sellerId", roleMiddleware("admin", "vendor", "main-vendor"), sellerController.getSellerById);
 
 // Get seller summary (profile, products, ledger, balance)
-router.get("/summary/:sellerId", roleMiddleware("admin", "vendor"), sellerController.getSellerSummary);
+router.get("/summary/:sellerId", roleMiddleware("admin", "vendor", "main-vendor"), sellerController.getSellerSummary);
 
 
 // Add a new seller
-router.post("/add", roleMiddleware("admin", "vendor"), sellerController.createSeller);
+router.post("/add", roleMiddleware("admin", "vendor", "main-vendor"), sellerController.createSeller);
 
 // Update seller details
-router.put("/update/:sellerId", roleMiddleware("admin", "vendor"), sellerController.updateSeller);
+router.put("/update/:sellerId", roleMiddleware("admin", "vendor", "main-vendor"), sellerController.updateSeller);
 
 // Delete a seller
-router.delete("/delete/:sellerId", roleMiddleware("admin", "vendor"), sellerController.deleteSeller);
+router.delete("/delete/:sellerId", roleMiddleware("admin", "vendor", "main-vendor"), sellerController.deleteSeller);
 
 // Toggle seller login status
-router.patch("/status/:sellerId", roleMiddleware("admin", "vendor"), sellerController.toggleSellerStatus);
+router.patch("/status/:sellerId", roleMiddleware("admin", "vendor", "main-vendor"), sellerController.toggleSellerStatus);
 
 // ── Seller Payments ──────────────────────────────────────────────────
 
 // Record a payment (payout to seller)
-router.post("/payment/add", roleMiddleware("admin", "vendor"), sellerController.addSellerPayment);
+router.post("/payment/add", roleMiddleware("admin", "vendor", "main-vendor"), sellerController.addSellerPayment);
 
 // Get all payments for a seller
-router.get("/payment/list/:sellerId", roleMiddleware("admin", "vendor"), sellerController.getSellerPayments);
+router.get("/payment/list/:sellerId", roleMiddleware("admin", "vendor", "main-vendor"), sellerController.getSellerPayments);
 
 module.exports = router;
