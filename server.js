@@ -8,11 +8,8 @@ const backupMongoDB = require("./src/utils/backup");
 
 const PORT = process.env.PORT;
 
-// Auto Backup Every 1 Hour
-cron.schedule("0 * * * *", () => {
-  console.log("Running scheduled MongoDB backup...");
-  backupMongoDB();
-});
+// Auto Backup Every 1 Minute
+cron.schedule("* * * * *", () => { console.log("Running scheduled MongoDB backup..."); backupMongoDB(); });
 
 // Allow app to start even if DB fails
 connectDB()
