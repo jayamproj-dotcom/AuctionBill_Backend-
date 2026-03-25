@@ -70,6 +70,9 @@ app.use("/api/session", require("./routes/sessionRoute"));
 
 app.use("/api/authme", require("./routes/authmeRoute"));
 
+//Backup Route
+app.use("/api/admin-backup", require("./routes/backupRoute"));
+
 app.get("/api/test", (req, res) => {
   res.send("Auction API Working ✅");
 });
