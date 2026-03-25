@@ -22,7 +22,7 @@ function addDays(date, days) {
 exports.getMainVendors = async (req, res) => {
   try {
     const mainVendors = await MainVendor.find()
-      .populate("plan", "name planId price durationType durationValue")
+      .populate("plan", "name planId price durationType durationValue branchCount")
       .populate("requestedPlan", "name planId price");
 
     const mainVendorIds = mainVendors.map((v) => v._id);
