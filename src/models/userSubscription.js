@@ -4,6 +4,7 @@ const userSubscriptionSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", required: true },
     subscriptionId: { type: mongoose.Schema.Types.ObjectId, ref: "Plan", required: true },
     priceAtPurchase: { type: Number, required: true },
+    branchCount: { type: Number, default: 0 },
     featuresAtPurchase: { 
         type: mongoose.Schema.Types.Mixed, 
         required: true 

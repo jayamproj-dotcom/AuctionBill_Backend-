@@ -99,6 +99,7 @@ exports.createMainVendor = async (req, res) => {
       userId: newMainVendor._id,
       subscriptionId: planExists._id,
       priceAtPurchase: planExists.price,
+      branchCount: planExists.branchCount || 0,
       featuresAtPurchase: planExists.features || {},
       startDate: new Date(),
       endDate: planEndDate,
@@ -301,6 +302,7 @@ exports.updateMainVendor = async (req, res) => {
           userId: id,
           subscriptionId: planToActivate._id,
           priceAtPurchase: planToActivate.price,
+          branchCount: planToActivate.branchCount || 0,
           featuresAtPurchase: planToActivate.features || {},
           startDate: new Date(),
           endDate: newPlanEndDate,
@@ -656,6 +658,7 @@ exports.getMainVendorPurchases = async (req, res) => {
         mainVendorName: sub.userId?.name || "Unknown Main Vendor",
         plan: sub.subscriptionId?.name || "Unknown Plan",
         price: sub.priceAtPurchase || 0,
+        branchCount: sub.branchCount || 0,
         status: currentSubStatus,
         paymentStatus: "Paid",
         startDate: sub.startDate,
@@ -683,6 +686,7 @@ exports.getMainVendorPurchasesById = async (req, res) => {
         id: sub._id,
         plan: sub.subscriptionId?.name || "Unknown Plan",
         amount: sub.priceAtPurchase || 0,
+        branchCount: sub.branchCount || 0,
         status: "Paid", // Assuming all entries in UserSubscription are paid
         date: sub.startDate,
         expiryDate: sub.endDate,
@@ -731,6 +735,7 @@ exports.exportMainVendorPurchases = async (req, res) => {
       { header: "Phone", key: "phone", width: 15 },
       { header: "Plan", key: "plan", width: 15 },
       { header: "Price", key: "price", width: 15 },
+      { header: "Branch Count", key: "branchCount", width: 15 },
       { header: "Status", key: "status", width: 10 },
       { header: "Purchase Date", key: "startDate", width: 20 },
       { header: "Expiry Date", key: "endDate", width: 20 },
@@ -756,6 +761,7 @@ exports.exportMainVendorPurchases = async (req, res) => {
             phone: sub.userId.phone || "N/A",
             plan: sub.subscriptionId?.name || "N/A",
             price: sub.priceAtPurchase || 0,
+            branchCount: sub.branchCount || 0,
             status: new Date(sub.endDate) < new Date() ? "Expired" : "Active",
             startDate: sub.startDate ? new Date(sub.startDate).toLocaleDateString() : "N/A",
             endDate: sub.endDate ? new Date(sub.endDate).toLocaleDateString() : "N/A",
@@ -1187,17 +1193,25 @@ exports.resetPassword = async (req, res) => {
 exports.getMainVendorProfile = async (req, res) => {
   try {
     const { id } = req.params;
-    const vendor = await MainVendor.findById(id).populate("plan");
+    const vendor = await MainVendor.findById(id).populate("plan").lean();
     if (!vendor) {
       return res
         .status(404)
         .json({ status: false, message: "Main vendor not found" });
     }
 
-    const vendorData = vendor.toObject();
-    delete vendorData.password;
+    // Find their currently active subscription
+    const activeSub = await UserSubscription.findOne({
+      userId: vendor._id,
+      startDate: { $lte: new Date() },
+      endDate: { $gte: new Date() }
+    }).sort({ createdAt: -1 });
+    
+    vendor.activeSubscription = activeSub;
 
-    res.status(200).json({ status: true, vendor: vendorData });
+    delete vendor.password;
+
+    res.status(200).json({ status: true, vendor });
   } catch (error) {
     console.error("Get profile error:", error);
     res.status(500).json({ status: false, message: "Internal server error" });

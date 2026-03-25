@@ -20,21 +20,17 @@ exports.createSubscription = async (req, res) => {
     }
 
     const subscription = await Subscription.create(data);
-    res
-      .status(201)
-      .json({
-        status: true,
-        message: "Subscription created successfully",
-        subscription,
-      });
+    res.status(201).json({
+      status: true,
+      message: "Subscription created successfully",
+      subscription,
+    });
   } catch (error) {
     console.error("Create subscription error:", error);
-    res
-      .status(500)
-      .json({
-        status: false,
-        message: error.message || "Internal server error",
-      });
+    res.status(500).json({
+      status: false,
+      message: error.message || "Internal server error",
+    });
   }
 };
 
@@ -46,12 +42,10 @@ exports.getAllSubscriptions = async (req, res) => {
     res.status(200).json({ status: true, subscriptions });
   } catch (error) {
     console.error("Get all subscriptions error:", error);
-    res
-      .status(500)
-      .json({
-        status: false,
-        message: error.message || "Internal server error",
-      });
+    res.status(500).json({
+      status: false,
+      message: error.message || "Internal server error",
+    });
   }
 };
 
@@ -65,12 +59,10 @@ exports.getSubscriptionById = async (req, res) => {
     res.status(200).json({ status: true, subscription });
   } catch (error) {
     console.error("Get subscription by ID error:", error);
-    res
-      .status(500)
-      .json({
-        status: false,
-        message: error.message || "Internal server error",
-      });
+    res.status(500).json({
+      status: false,
+      message: error.message || "Internal server error",
+    });
   }
 };
 
@@ -97,12 +89,10 @@ exports.updateSubscription = async (req, res) => {
     });
   } catch (error) {
     console.error("Update subscription error:", error);
-    res
-      .status(500)
-      .json({
-        status: false,
-        message: error.message || "Internal server error",
-      });
+    res.status(500).json({
+      status: false,
+      message: error.message || "Internal server error",
+    });
   }
 };
 
@@ -119,20 +109,16 @@ exports.deleteSubscription = async (req, res) => {
         .status(404)
         .json({ status: false, message: "Subscription not found" });
 
-    res
-      .status(200)
-      .json({
-        status: true,
-        message: "Subscription archived successfully",
-        subscription,
-      });
+    res.status(200).json({
+      status: true,
+      message: "Subscription archived successfully",
+      subscription,
+    });
   } catch (error) {
     console.error("Delete subscription error:", error);
-    res
-      .status(500)
-      .json({
-        status: false,
-        message: error.message || "Internal server error",
-      });
+    res.status(500).json({
+      status: false,
+      message: error.message || "Internal server error",
+    });
   }
 };
