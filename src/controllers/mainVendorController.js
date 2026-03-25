@@ -1582,3 +1582,16 @@ exports.getDashboardSummary = async (req, res) => {
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
+exports.logout = async (req, res) => {
+  try {
+    const { sessionId } = req.user;
+    if (sessionId) {
+      await Session.findOneAndUpdate({ sessionId }, { isActive: false });
+    }
+    res.status(200).json({ status: true, message: "Logged out successfully" });
+  } catch (error) {
+    console.error("Main Vendor logout error:", error);
+    res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};

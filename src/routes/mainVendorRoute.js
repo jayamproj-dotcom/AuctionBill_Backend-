@@ -12,6 +12,7 @@ router.post("/signup", mainVendorController.signup);
 router.post("/login", mainVendorController.login);
 router.post("/forgot-password", mainVendorController.forgotPassword);
 router.post("/reset-password", mainVendorController.resetPassword);
+router.post("/logout", authMiddleware, mainVendorController.logout);
 
 // Vendor specific routes
 router.get("/profile/:id", mainVendorController.getMainVendorProfile);
