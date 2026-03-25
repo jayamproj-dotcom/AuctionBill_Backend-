@@ -5,12 +5,12 @@ const seedAdmin = require("./src/utils/seedAdmin");
 
 const cron = require("node-cron");
 const backupMongoDB = require("./src/utils/backup");
-
 const PORT = process.env.PORT;
-
-// Auto Backup Every 1 Minute
-cron.schedule("* * * * *", () => { console.log("Running scheduled MongoDB backup..."); backupMongoDB(); });
-
+// Auto Backup Every 1 Hour
+// cron.schedule("* * * * *", () => {
+//   console.log("Running every 1 minute...");
+//   backupMongoDB();
+// });
 // Allow app to start even if DB fails
 connectDB()
   .then(() => {

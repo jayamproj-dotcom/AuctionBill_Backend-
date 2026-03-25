@@ -43,10 +43,12 @@ const backupMongoDB = () => {
 
     exec(command, (error, stdout, stderr) => {
         if (error) {
-            console.error("Backup error:", error);
+            console.error("\n❌ Backup failed!");
+            console.error("-> Error Message:", error.message);
+            if (stderr) console.error("-> Stderr:", stderr);
             return;
         }
-        console.log(`Backup success: ${backupFolder}`);
+        console.log(`✅ Backup success: ${backupFolder}`);
         deleteOldBackups();
     });
 };
