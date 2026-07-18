@@ -198,6 +198,7 @@ exports.getBillingData = async (req, res) => {
           txns.forEach((t) => {
             ledger.push({
               date: t.date,
+              createdAt: t.createdAt,
               description: `${t.productId?.name || "Product"} ${t.quantity || 0} * ${t.rate || 0}`,
               credit: Number(t.netAmount) || 0,
               debit: 0,
@@ -207,13 +208,21 @@ exports.getBillingData = async (req, res) => {
           payments.forEach((p) => {
             ledger.push({
               date: p.date ? (p.date instanceof Date ? p.date.toISOString().split("T")[0] : String(p.date).split("T")[0]) : "",
+              createdAt: p.createdAt,
               description: p.note || `Payment (${p.method})`,
               credit: 0,
               debit: Number(p.amount) || 0,
             });
           });
 
-          ledger.sort((a, b) => new Date(a.date) - new Date(b.date));
+          ledger.sort((a, b) => {
+            const dateA = new Date(a.date);
+            const dateB = new Date(b.date);
+            if (dateA.getTime() !== dateB.getTime()) return dateA - dateB;
+            const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return timeA - timeB;
+          });
 
           let balance = 0;
           data.records = ledger.map((rec) => {
@@ -353,6 +362,7 @@ exports.getBillingData = async (req, res) => {
           txns.forEach((t) => {
             ledger.push({
               date: t.date,
+              createdAt: t.createdAt,
               description: `${t.productId?.name || "Product"} ${t.quantity || 0} * ${t.rate || 0}`,
               debit: Number(t.finalAmount) || 0,
               credit: 0,
@@ -362,13 +372,21 @@ exports.getBillingData = async (req, res) => {
           payments.forEach((p) => {
             ledger.push({
               date: p.date ? (p.date instanceof Date ? p.date.toISOString().split("T")[0] : String(p.date).split("T")[0]) : "",
+              createdAt: p.createdAt,
               description: p.note || `Payment Received (${p.method})`,
               debit: 0,
               credit: Number(p.amount) || 0,
             });
           });
 
-          ledger.sort((a, b) => new Date(a.date) - new Date(b.date));
+          ledger.sort((a, b) => {
+            const dateA = new Date(a.date);
+            const dateB = new Date(b.date);
+            if (dateA.getTime() !== dateB.getTime()) return dateA - dateB;
+            const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return timeA - timeB;
+          });
 
           let balance = 0;
           data.records = ledger.map((rec) => {

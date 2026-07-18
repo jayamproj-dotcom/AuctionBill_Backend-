@@ -815,6 +815,8 @@ exports.login = async (req, res) => {
       });
     }
 
+    // Allow login even if subscription has expired so they can access subscription page to renew/activate plan.
+    /*
     if (
       mainVendor.planEndDate &&
       new Date() > new Date(mainVendor.planEndDate)
@@ -825,6 +827,7 @@ exports.login = async (req, res) => {
           "Your subscription plan has expired. Please renew to continue.",
       });
     }
+    */
 
     await cleanupExpiredSessions("MainVendor");
 

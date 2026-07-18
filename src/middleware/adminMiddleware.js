@@ -54,18 +54,25 @@ module.exports = async (req, res, next) => {
         mainVendor.planEndDate &&
         new Date() > new Date(mainVendor.planEndDate)
       ) {
-        if (decoded.sessionId) {
-          await Session.updateOne(
-            { sessionId: decoded.sessionId, isActive: true },
-            { isActive: false },
-          );
+        const originalUrl = req.originalUrl;
+        const isAllowed =
+          originalUrl.includes("/api/subscription") ||
+          originalUrl.match(/\/api\/main-vendor\/?(?:\?.*)?$/) ||
+          originalUrl.match(/\/api\/main-vendor\/[^/]+\/purchases(?:\?.*)?$/) ||
+          originalUrl.match(/\/api\/main-vendor\/[^/]+\/?(?:\?.*)?$/) ||
+          originalUrl.includes("/api/main-vendor/profile") ||
+          originalUrl.includes("/api/main-vendor/logout") ||
+          originalUrl.includes("/api/session/logout") ||
+          originalUrl.includes("/api/session/heartbeat");
+
+        if (!isAllowed) {
+          return res.status(403).json({
+            status: false,
+            message:
+              "Your subscription plan has expired. Please renew to continue.",
+            planExpired: true,
+          });
         }
-        return res.status(403).json({
-          status: false,
-          message:
-            "Your subscription plan has expired. Please renew to continue.",
-          planExpired: true,
-        });
       }
     }
 

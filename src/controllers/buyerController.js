@@ -160,9 +160,6 @@ exports.getBuyerSummary = async (req, res) => {
         (t) =>
           (t.productId?._id?.toString() || t.productId?.toString()) === pid,
       );
-      const pPmts = payments.filter(
-        (pm) => pm.productId && pm.productId.toString() === pid,
-      );
 
       const variantsWithStats = (p.variants || []).map((v) => {
         const vid = v._id?.toString();
@@ -170,6 +167,7 @@ exports.getBuyerSummary = async (req, res) => {
           (t) => t.variantId && t.variantId.toString() === vid,
         );
 
+        const vAmount = vTxns.reduce((s, t) => s + (Number(t.finalAmount) || 0), 0);
         return {
           ...v.toObject(),
           id: vid,
@@ -178,9 +176,9 @@ exports.getBuyerSummary = async (req, res) => {
             0,
           ),
           stats: {
-            amount: vTxns.reduce((s, t) => s + (Number(t.finalAmount) || 0), 0),
+            amount: vAmount,
             paid: 0,
-            balance: 0,
+            balance: vAmount,
           },
         };
       });
@@ -189,66 +187,48 @@ exports.getBuyerSummary = async (req, res) => {
         (s, t) => s + (Number(t.finalAmount) || 0),
         0,
       );
-      const totalPaidDirect = pPmts.reduce(
-        (s, pm) => s + (Number(pm.amount) || 0),
-        0,
-      );
-
-      // Distribute direct payments to variants FIFO
-      let remainingPaid = totalPaidDirect;
-      const variantsWithPayments = variantsWithStats.map((v) => {
-        const vAmount = v.stats.amount;
-        const vPaid = Math.min(vAmount, remainingPaid);
-        remainingPaid -= vPaid;
-        return {
-          ...v,
-          stats: {
-            ...v.stats,
-            paid: vPaid,
-            balance: vAmount - vPaid,
-          },
-        };
-      });
 
       return {
         ...p.toObject(),
         id: pid,
-        variants: variantsWithPayments,
+        variants: variantsWithStats,
         totalGross,
-        totalPaid: totalPaidDirect,
-        totalBalance: totalGross - totalPaidDirect,
+        totalPaid: 0,
+        totalBalance: totalGross,
       };
     });
 
-    // Apply advanceAmount to product balances (oldest first)
-    let availableAdvance = Number(buyer.advanceAmount) || 0;
-    // Sort products by date oldest first
+    // Sum of all payments (they are general payments)
+    const totalPayments = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    let remainingPaidPool = totalPayments;
+
+    // Sort products by date oldest first to apply payment pool
     enrichedProducts.sort((a, b) => new Date(a.date) - new Date(b.date));
 
     const finalProducts = enrichedProducts.map((p) => {
-      let pBal = p.totalGross - p.totalPaid;
-      if (pBal > 0 && availableAdvance > 0) {
-        const deduction = Math.min(pBal, availableAdvance);
-        p.totalPaid += deduction;
-        p.totalBalance -= deduction;
+      let pBal = p.totalGross;
+      if (pBal > 0 && remainingPaidPool > 0) {
+        const deduction = Math.min(pBal, remainingPaidPool);
+        p.totalPaid = deduction;
+        p.totalBalance = p.totalGross - deduction;
 
-        // Distribute advance deduction to variants
+        // Distribute deduction to variants
         let remDed = deduction;
         p.variants = p.variants.map((v) => {
-          const vBal = v.stats.balance;
-          const vDed = Math.min(vBal, remDed);
+          const vAmount = v.stats.amount;
+          const vDed = Math.min(vAmount, remDed);
           remDed -= vDed;
           return {
             ...v,
             stats: {
               ...v.stats,
-              paid: (v.stats.paid || 0) + vDed,
-              balance: (v.stats.balance || 0) - vDed,
+              paid: vDed,
+              balance: vAmount - vDed,
             },
           };
         });
 
-        availableAdvance -= deduction;
+        remainingPaidPool -= deduction;
       }
       return p;
     });
@@ -274,7 +254,7 @@ exports.getBuyerSummary = async (req, res) => {
           totalPurchases,
           totalPaid: totalPaidGlobal,
           balance: totalPurchases - totalPaidGlobal,
-          advanceAmount: availableAdvance, // Show remaining advance after balancing
+          advanceAmount: remainingPaidPool, // Show remaining advance after balancing
         },
         products: finalProducts,
         transactions,
@@ -531,183 +511,30 @@ exports.addBuyerPayment = async (req, res) => {
       });
     }
 
-    const { productId, isGlobalPay } = req.body;
-    let remainingAmount = Number(amount);
-    let paymentsCreated = [];
+    const payAmount = Number(amount);
 
-    if (isGlobalPay) {
-      // 1. Get all transactions for this buyer
-      const transactions = await Transaction.find({ buyerId });
-      const allPayments = await BuyerPayment.find({ buyerId });
+    const payment = new BuyerPayment({
+      vendorId,
+      buyerId,
+      productId: null, // Always general payment/advance
+      date,
+      amount: payAmount,
+      method,
+      note: note || "Payment Received",
+      reference: reference || `PAY-${Date.now()}`,
+    });
 
-      // Get unique product IDs from transactions
-      const pIds = [
-        ...new Set(transactions.map((t) => t.productId.toString())),
-      ];
-      const products = await AuctionProduct.find({ _id: { $in: pIds } });
+    await payment.save();
 
-      // Sort products by date (oldest first)
-      products.sort((a, b) => new Date(a.date) - new Date(b.date));
+    // Update buyer's advanceAmount
+    buyer.advanceAmount = (Number(buyer.advanceAmount) || 0) + payAmount;
+    await buyer.save();
 
-      for (const product of products) {
-        if (remainingAmount <= 0) break;
-
-        const pid = product._id.toString();
-        const pTxns = transactions.filter(
-          (t) => t.productId.toString() === pid,
-        );
-        const pPmts = allPayments.filter(
-          (pm) => pm.productId && pm.productId.toString() === pid,
-        );
-
-        const totalGross = pTxns.reduce(
-          (s, t) => s + (Number(t.finalAmount) || 0),
-          0,
-        );
-        const totalPaid = pPmts.reduce(
-          (s, pm) => s + (Number(pm.amount) || 0),
-          0,
-        );
-        const balance = totalGross - totalPaid;
-
-        if (balance > 0) {
-          const payAmount = Math.min(balance, remainingAmount);
-          const payment = new BuyerPayment({
-            vendorId,
-            buyerId,
-            productId: product._id,
-            date,
-            amount: payAmount,
-            method,
-            note: note || "Global Payment",
-            reference,
-          });
-          await payment.save();
-          paymentsCreated.push(payment);
-          remainingAmount -= payAmount;
-        }
-      }
-
-      // 2. Surplus is advance
-      if (remainingAmount > 0) {
-        buyer.advanceAmount =
-          (Number(buyer.advanceAmount) || 0) + remainingAmount;
-        await buyer.save();
-
-        const advancePayment = new BuyerPayment({
-          vendorId,
-          buyerId,
-          productId: null,
-          date,
-          amount: remainingAmount,
-          method,
-          note: note || "Advance Payment",
-          reference,
-        });
-        await advancePayment.save();
-        paymentsCreated.push(advancePayment);
-      }
-
-      return res.status(201).json({
-        success: true,
-        message:
-          paymentsCreated.length > 0
-            ? "Global payment processed"
-            : "No balance found to pay",
-        data: paymentsCreated,
-      });
-    } else if (productId) {
-      // Single product payment
-      const transactions = await Transaction.find({ buyerId, productId });
-      const payments = await BuyerPayment.find({ buyerId, productId });
-      const totalGross = transactions.reduce(
-        (s, t) => s + (Number(t.finalAmount) || 0),
-        0,
-      );
-      const totalPaid = payments.reduce(
-        (s, pm) => s + (Number(pm.amount) || 0),
-        0,
-      );
-      const balance = totalGross - totalPaid;
-
-      if (Number(amount) > balance && balance > 0) {
-        // Pay off the balance first
-        const productPayment = new BuyerPayment({
-          vendorId,
-          buyerId,
-          productId,
-          date,
-          amount: balance,
-          method,
-          note: note || "Full Product Payment",
-          reference,
-        });
-        await productPayment.save();
-
-        // rest is advance
-        const extra = Number(amount) - balance;
-        // buyer.advanceAmount = (Number(buyer.buyerId_ref?.advanceAmount) || 0) + extra; // using buyer.advanceAmount
-        // Wait, 'buyer' is the model instance here.
-        buyer.advanceAmount = (Number(buyer.advanceAmount) || 0) + extra;
-        await buyer.save();
-
-        const advancePayment = new BuyerPayment({
-          vendorId,
-          buyerId,
-          productId: null,
-          date,
-          amount: extra,
-          method,
-          note: note || "Advance (Extra from product payment)",
-          reference,
-        });
-        await advancePayment.save();
-
-        return res.status(201).json({
-          success: true,
-          message: "Product paid in full and extra stored as advance",
-          data: [productPayment, advancePayment],
-        });
-      } else {
-        const payment = new BuyerPayment({
-          vendorId,
-          buyerId,
-          productId,
-          date,
-          amount,
-          method,
-          note,
-          reference,
-        });
-        await payment.save();
-        return res.status(201).json({
-          success: true,
-          message: "Payment recorded successfully",
-          data: payment,
-        });
-      }
-    } else {
-      // General payment/Advance
-      buyer.advanceAmount = (Number(buyer.advanceAmount) || 0) + Number(amount);
-      await buyer.save();
-
-      const payment = new BuyerPayment({
-        vendorId,
-        buyerId,
-        productId: null,
-        date,
-        amount,
-        method,
-        note: note || "General Payment/Advance",
-        reference,
-      });
-      await payment.save();
-      return res.status(201).json({
-        success: true,
-        message: "Advance/General payment recorded",
-        data: payment,
-      });
-    }
+    return res.status(201).json({
+      success: true,
+      message: "Payment recorded successfully",
+      data: payment,
+    });
   } catch (error) {
     res
       .status(500)
