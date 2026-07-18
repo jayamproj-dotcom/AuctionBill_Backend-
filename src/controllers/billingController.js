@@ -159,11 +159,32 @@ exports.getBillingData = async (req, res) => {
             0,
           );
           data.totalAdvance = Math.max(0, totalPayments - totalTransactions);
+          data.payments = allPayments
+            .filter((p) => {
+              const pDateStr = p.date ? new Date(p.date).toISOString().split("T")[0] : "";
+              if (startDate && pDateStr < startDate) return false;
+              if (endDate && pDateStr > endDate) return false;
+              return true;
+            })
+            .map((p) => ({
+              date: p.date,
+              amount: p.amount,
+              method: p.method,
+              note: p.note,
+            }));
         } else {
           // ... (Ledger code remains same)
+          const paymentDateQuery = {};
+          if (startDate && endDate) {
+            paymentDateQuery.date = {
+              $gte: new Date(startDate),
+              $lte: new Date(endDate + "T23:59:59.999Z"),
+            };
+          }
+
           const payments = await SellerPayment.find({
             sellerId: id,
-            ...(query.date ? { date: query.date } : {}),
+            ...paymentDateQuery,
           }).sort({ date: 1 });
 
           const txns = await Transaction.find({
@@ -177,7 +198,7 @@ exports.getBillingData = async (req, res) => {
           txns.forEach((t) => {
             ledger.push({
               date: t.date,
-              description: `Sale - ${t.productId?.name || "Product"} ${t.quantity || 0} * ${t.rate || 0}`,
+              description: `${t.productId?.name || "Product"} ${t.quantity || 0} * ${t.rate || 0}`,
               credit: Number(t.netAmount) || 0,
               debit: 0,
             });

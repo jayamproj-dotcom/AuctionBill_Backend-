@@ -116,7 +116,7 @@ exports.getSellerSummary = async (req, res) => {
       ledger.push({
         date: t.date,
         createdAt: t.createdAt,
-        description: `Sale recorded - ${t.productId?.name || "Unknown Product"} ${t.quantity || 0} * ${t.rate || 0}`,
+        description: `${t.productId?.name || "Unknown Product"} ${t.quantity || 0} * ${t.rate || 0} (Comm: ${t.commissionPercent || 0}% - ₹${t.commissionAmount || 0})`,
         credit: Number(t.netAmount) || 0,
         debit: 0,
         type: "sale",
@@ -450,8 +450,10 @@ exports.deleteSeller = async (req, res) => {
     }
 
     await Seller.findByIdAndDelete(req.params.sellerId);
-    // Also delete all payments for this seller
+    // Also delete all payments, auction products, and transactions for this seller
     await SellerPayment.deleteMany({ sellerId: req.params.sellerId });
+    await AuctionProduct.deleteMany({ sellerId: req.params.sellerId });
+    await Transaction.deleteMany({ sellerId: req.params.sellerId });
 
     res
       .status(200)
