@@ -107,7 +107,7 @@ exports.getBuyerSummary = async (req, res) => {
       ledger.push({
         date: t.date,
         createdAt: t.createdAt,
-        description: `Purchase - ${t.productId?.name || "Unknown Product"} ${t.quantity || 0} * ${t.rate || 0}`,
+        description: `${t.productId?.name || "Unknown Product"} ${t.quantity || 0} * ${t.rate || 0}`,
         debit: Number(t.finalAmount) || 0,
         credit: 0,
         type: "purchase",

@@ -353,7 +353,7 @@ exports.getBillingData = async (req, res) => {
           txns.forEach((t) => {
             ledger.push({
               date: t.date,
-              description: `Purchase - ${t.productId?.name || "Product"} ${t.quantity || 0} * ${t.rate || 0}`,
+              description: `${t.productId?.name || "Product"} ${t.quantity || 0} * ${t.rate || 0}`,
               debit: Number(t.finalAmount) || 0,
               credit: 0,
             });

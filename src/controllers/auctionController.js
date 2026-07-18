@@ -231,6 +231,16 @@ exports.recordSale = async (req, res) => {
       );
       if (vIndex !== -1) {
         product.variants[vIndex].sellQuantity += roundedQuantity;
+
+        // Check if all variants are sold out
+        const stockVariants = (product.variants || []).filter((v) => (v.quantity || 0) > 0);
+        const isSoldOut =
+          stockVariants.length > 0 &&
+          stockVariants.every((v) => (v.sellQuantity || 0) >= v.quantity);
+        if (isSoldOut) {
+          product.status = "soldout";
+        }
+
         await product.save();
       }
     }
